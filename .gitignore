@@ -1,0 +1,42 @@
+# Build products and dependencies
+**/.build/
+**/.swiftpm/
+**/node_modules/
+**/dist/
+*.app/
+*.zip
+*.exe
+*.dmg
+*.pkg
+*.msi
+
+# Local app data and private QA material must never be published
+**/Delivery/
+**/QA-Test-State/
+**/History/
+**/Drafts/
+Autosave.json
+*.draft.json
+*.history.json
+*.log
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.p12
+*.pfx
+*.key
+
+# OS/editor metadata
+.DS_Store
+._*
+__MACOSX/
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+__pycache__/

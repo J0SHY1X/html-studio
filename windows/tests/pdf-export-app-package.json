@@ -1,0 +1,6 @@
+{
+  "name": "html-studio-pdf-e2e",
+  "version": "1.0.0",
+  "main": "tests/pdf-export-test.js",
+  "private": true
+}

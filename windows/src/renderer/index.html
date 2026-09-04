@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src * data: blob: file:; font-src * data: file:; frame-src 'self' data: blob: file:;"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HTML Studio</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="app-mark">&lt;/&gt;</div>
+      <div>
+        <strong>HTML Studio</strong>
+        <span id="document-name">未命名.html</span>
+      </div>
+    </div>
+
+    <div class="file-actions">
+      <button id="new-button" title="新建 (Ctrl+N)">新建</button>
+      <button id="open-button" title="打开 (Ctrl+O)">打开</button>
+      <button id="save-button" class="primary" title="保存 (Ctrl+S)">保存</button>
+      <span class="header-separator" aria-hidden="true"></span>
+      <button id="undo-button" title="撤销当前编辑区域 (Ctrl+Z)">↶ 撤销</button>
+      <button id="redo-button" title="重做当前编辑区域 (Ctrl+Shift+Z / Ctrl+Y)">↷ 重做</button>
+    </div>
+
+    <div class="workspace-tabs" role="tablist">
+      <button data-mode="source">源码</button>
+      <button data-mode="split" class="active">分屏</button>
+      <button data-mode="design">可视化</button>
+    </div>
+
+    <div class="export-actions">
+      <button id="history-button" title="修改历史 (Ctrl+Alt+H)">修改历史</button>
+      <button id="print-button" title="打印当前文档 (Ctrl+P)">打印</button>
+      <button id="export-markdown">导出 Markdown</button>
+      <button id="export-docx">导出 Word</button>
+      <button id="export-pdf" title="导出 PDF (Ctrl+Alt+P)">导出 PDF</button>
+    </div>
+  </header>
+
+  <nav id="document-tabs" class="document-tabs" aria-label="文档标签页">
+    <div id="document-tab-list" class="document-tab-list"></div>
+    <button id="add-tab-button" class="add-tab-button" title="新建标签页">＋</button>
+  </nav>
+
+  <main class="app-shell">
+    <aside class="sidebar">
+      <section>
+        <p class="section-label">文档</p>
+        <div class="document-card">
+          <span class="document-icon">&lt;/&gt;</span>
+          <div>
+            <strong id="sidebar-name">未命名.html</strong>
+            <span id="sidebar-path">尚未保存</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="outline-section">
+        <p class="section-label">页面大纲</p>
+        <div id="outline" class="outline"></div>
+      </section>
+
+      <section class="sidebar-footer">
+        <span>Windows 版 · 0.3.8</span>
+        <span>本地离线编辑</span>
+      </section>
+    </aside>
+
+    <section id="workspace" class="workspace mode-split">
+      <section id="source-pane" class="pane source-pane">
+        <div class="pane-title">
+          <span>&lt;/&gt; HTML 源码</span>
+          <span id="source-stats">1 行</span>
+        </div>
+        <textarea
+          id="source-editor"
+          spellcheck="false"
+          aria-label="HTML 源码编辑器"
+        ></textarea>
+      </section>
+
+      <section id="design-pane" class="pane design-pane">
+        <div class="pane-title">
+          <span>✎ 可视化编辑</span>
+          <span id="design-status">点击页面即可输入</span>
+        </div>
+
+        <div class="design-toolbar" aria-label="可视化编辑工具栏">
+          <div class="toolbar-row">
+            <label class="edit-toggle">
+              <input id="edit-toggle" type="checkbox" checked>
+              <span>直接编辑</span>
+            </label>
+            <span class="separator"></span>
+
+            <select id="font-family" title="字体">
+              <option>Microsoft YaHei</option>
+              <option>SimSun</option>
+              <option>SimHei</option>
+              <option>KaiTi</option>
+              <option>Arial</option>
+              <option>Calibri</option>
+              <option>Times New Roman</option>
+              <option>Georgia</option>
+              <option>Consolas</option>
+            </select>
+
+            <select id="font-size" title="字号">
+              <option>10</option>
+              <option>12</option>
+              <option>14</option>
+              <option selected>16</option>
+              <option>18</option>
+              <option>20</option>
+              <option>24</option>
+              <option>28</option>
+              <option>32</option>
+              <option>36</option>
+              <option>48</option>
+              <option>64</option>
+              <option>72</option>
+            </select>
+
+            <span class="separator"></span>
+            <button data-command="bold" title="粗体"><strong>B</strong></button>
+            <button data-command="italic" title="斜体"><em>I</em></button>
+            <button data-command="underline" title="下划线"><u>U</u></button>
+            <button data-command="strikeThrough" title="删除线"><s>S</s></button>
+            <label class="color-tool" title="文字颜色">
+              A
+              <input id="foreground-color" type="color" value="#111827">
+            </label>
+            <label class="color-tool highlight" title="文字底色">
+              ▰
+              <input id="highlight-color" type="color" value="#fff2a8">
+            </label>
+            <span class="separator"></span>
+            <button class="history-command" data-command="undo" title="撤销页面编辑">↶ 撤销</button>
+            <button class="history-command" data-command="redo" title="重做页面编辑">↷ 重做</button>
+          </div>
+
+          <div class="toolbar-row">
+            <select id="block-format" title="段落样式">
+              <option value="p">正文</option>
+              <option value="h1">标题 1</option>
+              <option value="h2">标题 2</option>
+              <option value="h3">标题 3</option>
+              <option value="h4">标题 4</option>
+              <option value="blockquote">引用</option>
+              <option value="pre">预格式文本</option>
+            </select>
+            <button data-command="insertParagraph" title="插入新段落">¶</button>
+            <span class="separator"></span>
+            <button data-command="justifyLeft" title="左对齐">≡</button>
+            <button data-command="justifyCenter" title="居中">≣</button>
+            <button data-command="justifyRight" title="右对齐">≡</button>
+            <button data-command="justifyFull" title="两端对齐">▤</button>
+            <span class="separator"></span>
+            <button data-command="insertUnorderedList" title="项目符号列表">•☰</button>
+            <button data-command="insertOrderedList" title="编号列表">1.☰</button>
+            <button data-command="outdent" title="减少缩进">⇤</button>
+            <button data-command="indent" title="增加缩进">⇥</button>
+            <span class="separator"></span>
+            <button id="link-button" title="插入链接">🔗</button>
+            <button data-command="unlink" title="移除链接">断链</button>
+            <button id="image-button" title="插入图片">图片</button>
+
+            <details id="page-menu" class="toolbar-menu">
+              <summary>▣ 页面</summary>
+              <div class="toolbar-menu-panel">
+                <button data-page-action="duplicateCurrent">复制当前页到后面</button>
+                <button data-page-action="insertBlankAfter">在当前页后新增空白页</button>
+              </div>
+            </details>
+
+            <details id="table-menu" class="table-menu">
+              <summary>▦ 表格</summary>
+              <div class="table-menu-panel">
+                <button data-table-insert="2,2">插入 2 × 2 表格</button>
+                <button data-table-insert="3,3">插入 3 × 3 表格</button>
+                <button data-table-insert="4,4">插入 4 × 4 表格</button>
+                <hr>
+                <button data-table-action="addRowBefore">在上方添加行</button>
+                <button data-table-action="addRowAfter">在下方添加行</button>
+                <button data-table-action="addColumnBefore">在左侧添加列</button>
+                <button data-table-action="addColumnAfter">在右侧添加列</button>
+                <hr>
+                <button data-table-action="toggleHeader">切换首行为表头</button>
+                <button data-table-action="deleteRow">删除当前行</button>
+                <button data-table-action="deleteColumn">删除当前列</button>
+                <button data-table-action="deleteTable" class="danger">删除整个表格</button>
+              </div>
+            </details>
+
+            <button data-command="insertHorizontalRule" title="插入分隔线">―</button>
+            <button data-command="removeFormat" title="清除文字格式">清除格式</button>
+          </div>
+        </div>
+
+        <iframe
+          id="design-frame"
+          title="可视化 HTML 编辑器"
+          sandbox="allow-same-origin"
+        ></iframe>
+      </section>
+    </section>
+  </main>
+
+  <footer class="status-bar">
+    <span id="dirty-indicator" class="status-dot clean"></span>
+    <span id="save-status">新文档</span>
+    <span class="status-spacer"></span>
+    <span id="line-count">1 行</span>
+    <span id="character-count">0 字符</span>
+    <span>UTF-8</span>
+  </footer>
+
+  <div id="context-menu" class="context-menu" hidden role="menu">
+    <button data-context-action="undo">撤销</button>
+    <button data-context-action="redo">重做</button>
+    <hr>
+    <button data-context-action="cut">剪切</button>
+    <button data-context-action="copy">复制</button>
+    <button data-context-action="paste">粘贴</button>
+    <button data-context-action="pastePlainText">粘贴为纯文本</button>
+    <button data-context-action="delete">删除</button>
+    <button data-context-action="selectAll">全选</button>
+    <hr data-context-scope="design">
+    <span class="context-menu-section-title" data-context-scope="design">文字格式</span>
+    <div class="context-menu-grid" data-context-scope="design">
+      <button data-context-command="bold">粗体</button>
+      <button data-context-command="italic">斜体</button>
+      <button data-context-command="underline">下划线</button>
+      <button data-context-command="strikeThrough">删除线</button>
+    </div>
+    <div class="context-menu-grid" data-context-scope="design">
+      <button data-context-command="formatBlock" data-context-value="p">正文段落</button>
+      <button data-context-command="formatBlock" data-context-value="h1">一级标题</button>
+      <button data-context-command="formatBlock" data-context-value="h2">二级标题</button>
+      <button data-context-command="insertParagraph">插入段落</button>
+      <button data-context-command="insertUnorderedList">项目符号</button>
+      <button data-context-command="insertOrderedList">编号列表</button>
+    </div>
+    <div class="context-menu-grid" data-context-scope="design">
+      <button data-context-command="justifyLeft">左对齐</button>
+      <button data-context-command="justifyCenter">居中</button>
+      <button data-context-command="justifyRight">右对齐</button>
+      <button data-context-command="justifyFull">两端对齐</button>
+    </div>
+    <div class="context-color-row" data-context-scope="design">
+      <label>文字颜色<input id="context-foreground-color" type="color" value="#111827"></label>
+      <label>背景颜色<input id="context-highlight-color" type="color" value="#fff2a8"></label>
+    </div>
+    <button data-context-command="removeFormat" data-context-scope="design">清除文字格式</button>
+    <button data-context-command="hiliteColor" data-context-value="transparent" data-context-scope="design">清除背景颜色</button>
+    <hr data-context-scope="design">
+    <button data-context-action="duplicateCurrent" data-context-scope="design">复制当前页到后面</button>
+    <button data-context-action="insertBlankAfter" data-context-scope="design">在当前页后新增空白页</button>
+  </div>
+
+  <dialog id="history-dialog" class="history-dialog">
+    <header>
+      <div>
+        <strong>修改历史</strong>
+        <span id="history-document-name">未命名.html</span>
+      </div>
+      <div>
+        <button id="export-history-button">导出日志…</button>
+        <button id="close-history-button" class="primary">完成</button>
+      </div>
+    </header>
+    <div class="history-layout">
+      <div id="history-list" class="history-list"></div>
+      <section class="history-detail">
+        <div class="history-detail-heading">
+          <div>
+            <strong id="history-action">尚无修改记录</strong>
+            <span id="history-summary">编辑后会在这里保存可恢复快照。</span>
+          </div>
+          <button id="restore-history-button" disabled>恢复到此版本</button>
+        </div>
+        <pre id="history-html"></pre>
+      </section>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="converters.js"></script>
+  <script src="guide.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

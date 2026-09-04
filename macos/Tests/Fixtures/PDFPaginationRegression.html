@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>PDF 分页回归测试</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: #eef2f6; color: #203247; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+    main { width: 794px; margin: 0 auto; background: #fff; padding: 52px 64px; }
+    h1 { margin: 0 0 24px; font-size: 34px; color: #0b4368; }
+    .lead { font-size: 20px; line-height: 1.8; }
+    .reserved { height: 820px; border: 2px dashed #adc7dd; background: #f7fbff; padding: 24px; }
+    .crossing-paragraph {
+      margin: 28px 0;
+      padding: 18px 22px;
+      border-left: 6px solid #ec8c19;
+      background: #fff7e9;
+      font-size: 27px;
+      line-height: 1.75;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 22px; line-height: 1.6; }
+    th, td { border: 1px solid #8ca5ba; padding: 16px; text-align: left; }
+    tr:nth-child(even) { background: #edf5fb; }
+    .tail { height: 780px; padding-top: 40px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>PDF 分页回归测试</h1>
+    <p class="lead">下方橙色段落在未修复版本中会被 A4 裁切线从文字中间切开。</p>
+    <div class="reserved">第一页预留内容区：用于把下一段推到分页边界附近。</div>
+    <p class="crossing-paragraph">反倾销调查关注出口价格与正常价值，反补贴调查关注政府财政资助及产业损害；本段必须整体出现在同一页，任何一行都不应在页尾或页首被截掉。</p>
+    <table>
+      <thead><tr><th>测试项</th><th>预期结果</th></tr></thead>
+      <tbody>
+        <tr><td>段落分页</td><td>整段移动到下一页</td></tr>
+        <tr><td>表格行分页</td><td>单行不被页面边界截断</td></tr>
+        <tr><td>中文文字</td><td>字形完整且可复制</td></tr>
+      </tbody>
+    </table>
+    <div class="tail">文档尾部，用于验证多页输出。</div>
+  </main>
+</body>
+</html>

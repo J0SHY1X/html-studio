@@ -27,6 +27,7 @@
       <span class="header-separator" aria-hidden="true"></span>
       <button id="undo-button" title="撤销当前编辑区域 (Ctrl+Z)">↶ 撤销</button>
       <button id="redo-button" title="重做当前编辑区域 (Ctrl+Shift+Z / Ctrl+Y)">↷ 重做</button>
+      <button id="find-button" title="在当前编辑区域查找 (Ctrl+F)">⌕ 查找</button>
     </div>
 
     <div class="workspace-tabs" role="tablist">
@@ -49,6 +50,25 @@
     <button id="add-tab-button" class="add-tab-button" title="新建标签页">＋</button>
   </nav>
 
+  <section id="find-replace-bar" class="find-replace-bar" hidden aria-label="查找和替换">
+    <div class="find-row">
+      <span id="find-target" class="find-target">页面</span>
+      <input id="find-input" type="text" placeholder="查找" autocomplete="off" spellcheck="false">
+      <button id="find-previous" title="查找上一个 (Ctrl+Shift+G)">↑</button>
+      <button id="find-next" title="查找下一个 (Ctrl+G)">↓</button>
+      <label class="match-case"><input id="match-case" type="checkbox">区分大小写</label>
+      <span id="find-status" class="find-status" role="status">输入查找内容</span>
+      <button id="toggle-replace" title="显示或隐藏替换栏">替换</button>
+      <button id="close-find" title="关闭 (Esc)">×</button>
+    </div>
+    <div id="replace-row" class="find-row replace-row" hidden>
+      <span class="find-target">替换为</span>
+      <input id="replace-input" type="text" placeholder="替换内容" autocomplete="off" spellcheck="false">
+      <button id="replace-current">替换</button>
+      <button id="replace-all">全部替换</button>
+    </div>
+  </section>
+
   <main class="app-shell">
     <aside class="sidebar">
       <section>
@@ -68,7 +88,7 @@
       </section>
 
       <section class="sidebar-footer">
-        <span>Windows 版 · 0.3.8</span>
+        <span>Windows 版 · 0.3.9</span>
         <span>本地离线编辑</span>
       </section>
     </aside>
@@ -232,6 +252,9 @@
     <button data-context-action="pastePlainText">粘贴为纯文本</button>
     <button data-context-action="delete">删除</button>
     <button data-context-action="selectAll">全选</button>
+    <hr>
+    <button data-context-action="find">查找…</button>
+    <button data-context-action="findReplace">查找与替换…</button>
     <hr data-context-scope="design">
     <span class="context-menu-section-title" data-context-scope="design">文字格式</span>
     <div class="context-menu-grid" data-context-scope="design">

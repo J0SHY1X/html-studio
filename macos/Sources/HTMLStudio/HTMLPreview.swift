@@ -156,6 +156,14 @@ struct HTMLPreview: NSViewRepresentable {
             addResponderItem("全选", selector: "selectAll:", to: menu)
             menu.addItem(.separator())
 
+            addTargetItem("查找…", action: #selector(showFind), to: menu)
+            addTargetItem(
+                "查找与替换…",
+                action: #selector(showFindAndReplace),
+                to: menu
+            )
+            menu.addItem(.separator())
+
             let formatMenu = NSMenu(title: "文字格式")
             addCommandItem("粗体", command: "bold", to: formatMenu)
             addCommandItem("斜体", command: "italic", to: formatMenu)
@@ -319,6 +327,14 @@ struct HTMLPreview: NSViewRepresentable {
             controller.pastePlainText()
         }
 
+        @objc private func showFind() {
+            NotificationCenter.default.post(name: .htmlStudioFind, object: nil)
+        }
+
+        @objc private func showFindAndReplace() {
+            NotificationCenter.default.post(name: .htmlStudioFindAndReplace, object: nil)
+        }
+
         @objc private func showCustomColorPanel(_ sender: NSMenuItem) {
             colorPanelCommand = sender.representedObject as? String ?? "foreColor"
             let panel = NSColorPanel.shared
@@ -405,6 +421,7 @@ struct HTMLPreview: NSViewRepresentable {
         compositionAction: null,
         isComposing: false,
         activePage: null,
+        findState: { key: '', matches: [], currentIndex: -1 },
         pageSelector: '[data-slide], [data-page], [data-page-number], .slide, .page, .html-studio-page',
 
         body() {
@@ -928,6 +945,180 @@ struct HTMLPreview: NSViewRepresentable {
           if (action === 'duplicateCurrent') return this.duplicateCurrentPage();
           if (action === 'insertBlankAfter') return this.insertBlankPage();
           return false;
+        },
+
+        findKey(query, matchCase) {
+          return (matchCase ? '1:' : '0:') + String(query ?? '');
+        },
+
+        searchableTextNodes() {
+          const nodes = [];
+          const walker = document.createTreeWalker(
+            this.body(),
+            NodeFilter.SHOW_TEXT,
+            {
+              acceptNode: (node) => {
+                if (!node.nodeValue || !node.nodeValue.length) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                const parent = node.parentElement;
+                if (!parent || parent.closest(
+                  'script,style,noscript,textarea,[data-html-studio-ui]'
+                )) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                const style = window.getComputedStyle(parent);
+                if (style.display === 'none' || style.visibility === 'hidden') {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+              }
+            }
+          );
+          let node = walker.nextNode();
+          while (node) {
+            nodes.push(node);
+            node = walker.nextNode();
+          }
+          return nodes;
+        },
+
+        buildFindMatches(query, matchCase) {
+          const needle = String(query ?? '');
+          if (!needle) return [];
+          const comparableNeedle = matchCase ? needle : needle.toLocaleLowerCase();
+          const matches = [];
+          this.searchableTextNodes().forEach((node) => {
+            const source = matchCase ? node.nodeValue : node.nodeValue.toLocaleLowerCase();
+            let offset = 0;
+            while (offset <= source.length - comparableNeedle.length) {
+              const index = source.indexOf(comparableNeedle, offset);
+              if (index < 0) break;
+              matches.push({ node, start: index, end: index + needle.length });
+              offset = index + Math.max(1, comparableNeedle.length);
+            }
+          });
+          return matches;
+        },
+
+        selectFindMatch(index) {
+          const match = this.findState.matches[index];
+          if (!match?.node?.isConnected) return false;
+          const range = document.createRange();
+          range.setStart(match.node, match.start);
+          range.setEnd(match.node, match.end);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          this.savedRange = range.cloneRange();
+          this.markActivePage(match.node);
+          match.node.parentElement?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'nearest'
+          });
+          return true;
+        },
+
+        find(query, matchCase, backwards = false, reset = false) {
+          const needle = String(query ?? '');
+          if (!needle) {
+            this.clearFind();
+            return { current: 0, total: 0, replaced: 0 };
+          }
+          const key = this.findKey(needle, !!matchCase);
+          const sameSearch = key === this.findState.key;
+          const previousIndex = this.findState.currentIndex;
+          const matches = this.buildFindMatches(needle, !!matchCase);
+          this.findState = { key, matches, currentIndex: -1 };
+          if (!matches.length) return { current: 0, total: 0, replaced: 0 };
+
+          let index;
+          if (!reset && sameSearch && previousIndex >= 0) {
+            index = backwards
+              ? (previousIndex - 1 + matches.length) % matches.length
+              : (previousIndex + 1) % matches.length;
+          } else {
+            index = backwards ? matches.length - 1 : 0;
+          }
+          this.findState.currentIndex = index;
+          this.selectFindMatch(index);
+          return { current: index + 1, total: matches.length, replaced: 0 };
+        },
+
+        replaceCurrent(query, replacement, matchCase) {
+          if (!this.editable || this.isComposing) {
+            return { current: 0, total: 0, replaced: 0 };
+          }
+          const needle = String(query ?? '');
+          if (!needle) return { current: 0, total: 0, replaced: 0 };
+          const key = this.findKey(needle, !!matchCase);
+          const previousIndex = key === this.findState.key
+            ? this.findState.currentIndex
+            : 0;
+          const matches = this.buildFindMatches(needle, !!matchCase);
+          if (!matches.length) {
+            this.findState = { key, matches: [], currentIndex: -1 };
+            return { current: 0, total: 0, replaced: 0 };
+          }
+          const index = Math.max(0, Math.min(previousIndex, matches.length - 1));
+          const match = matches[index];
+          const value = String(replacement ?? '');
+          match.node.replaceData(match.start, match.end - match.start, value);
+          const range = document.createRange();
+          range.setStart(match.node, match.start + value.length);
+          range.collapse(true);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          this.savedRange = range.cloneRange();
+
+          const remaining = this.buildFindMatches(needle, !!matchCase);
+          this.findState = { key, matches: remaining, currentIndex: -1 };
+          if (remaining.length) {
+            this.findState.currentIndex = Math.min(index, remaining.length - 1);
+            this.selectFindMatch(this.findState.currentIndex);
+          }
+          this.notifyChange('替换页面文字', false);
+          return {
+            current: this.findState.currentIndex + 1,
+            total: remaining.length,
+            replaced: 1
+          };
+        },
+
+        replaceAll(query, replacement, matchCase) {
+          if (!this.editable || this.isComposing) {
+            return { current: 0, total: 0, replaced: 0 };
+          }
+          const needle = String(query ?? '');
+          if (!needle) return { current: 0, total: 0, replaced: 0 };
+          const matches = this.buildFindMatches(needle, !!matchCase);
+          if (!matches.length) {
+            this.findState = {
+              key: this.findKey(needle, !!matchCase),
+              matches: [],
+              currentIndex: -1
+            };
+            return { current: 0, total: 0, replaced: 0 };
+          }
+          const value = String(replacement ?? '');
+          [...matches].reverse().forEach((match) => {
+            match.node.replaceData(match.start, match.end - match.start, value);
+          });
+          const remaining = this.buildFindMatches(needle, !!matchCase);
+          this.findState = {
+            key: this.findKey(needle, !!matchCase),
+            matches: remaining,
+            currentIndex: -1
+          };
+          this.notifyChange(`全部替换页面文字（${matches.length} 处）`, false);
+          return { current: 0, total: remaining.length, replaced: matches.length };
+        },
+
+        clearFind() {
+          this.findState = { key: '', matches: [], currentIndex: -1 };
+          return true;
         }
       };
 

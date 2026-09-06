@@ -145,7 +145,7 @@ window.HTMLStudioGuideHTML = `<!doctype html>
 <body>
   <main>
     <section class="hero">
-      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.8</p>
+      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.9</p>
       <h1>从源码到所见即所得，<br>在一个窗口完成。</h1>
       <p class="lead">HTML Studio 可打开、实时预览和编辑 HTML，并导出 Markdown、Word 与 PDF，或打开 Windows 系统打印对话框。右侧页面支持中文输入法和类似 Word 的格式工具。</p>
       <span class="close-tip">本说明是独立标签页，点击标签上的 × 即可关闭</span>
@@ -188,6 +188,10 @@ window.HTMLStudioGuideHTML = `<!doctype html>
         <strong>修改历史</strong>
         <p>每个文档独立记录最近 120 次修改快照，可查看、恢复旧版本，并导出 JSON 日志留存。</p>
       </article>
+      <article class="card">
+        <strong>查找与替换</strong>
+        <p>根据最后使用的源码或页面区域查找文字，可循环定位、区分大小写，并替换当前匹配或一次替换全部。</p>
+      </article>
     </section>
 
     <h2>常用快捷键</h2>
@@ -199,6 +203,9 @@ window.HTMLStudioGuideHTML = `<!doctype html>
         <tr><td>保存</td><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>首次保存时选择位置</td></tr>
         <tr><td>另存为</td><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></td><td>保留原文件并创建副本</td></tr>
         <tr><td>粘贴为纯文本</td><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>V</kbd></td><td>移除剪贴板中的字体、颜色和其他 HTML 格式</td></tr>
+        <tr><td>查找</td><td><kbd>Ctrl</kbd> + <kbd>F</kbd></td><td>在当前源码或可视化页面中查找</td></tr>
+        <tr><td>查找与替换</td><td><kbd>Ctrl</kbd> + <kbd>H</kbd></td><td>替换当前匹配或全部匹配</td></tr>
+        <tr><td>下一处 / 上一处</td><td><kbd>Ctrl</kbd> + <kbd>G</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd></td><td>循环定位匹配内容</td></tr>
         <tr><td>修改历史</td><td><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>H</kbd></td><td>查看日志与恢复快照</td></tr>
         <tr><td>导出 PDF</td><td><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>P</kbd></td><td>按 A4 保留 CSS、背景和表格，并避免正文被分页线截断</td></tr>
       </tbody>

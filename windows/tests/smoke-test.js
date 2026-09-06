@@ -30,7 +30,7 @@ for (const relativePath of requiredFiles) {
 const packageJSON = JSON.parse(
   fs.readFileSync(path.join(root, "package.json"), "utf8")
 );
-assert.equal(packageJSON.version, "0.3.8");
+assert.equal(packageJSON.version, "0.3.9");
 assert.equal(packageJSON.build.win.target[0].target, "nsis");
 assert.match(packageJSON.build.nsis.artifactName, /Setup/);
 assert.match(packageJSON.build.portable.artifactName, /Portable/);
@@ -70,6 +70,9 @@ assert.match(rendererHTML, /id="undo-button"/);
 assert.match(rendererHTML, /id="redo-button"/);
 assert.match(rendererHTML, />↶ 撤销</);
 assert.match(rendererHTML, />↷ 重做</);
+assert.match(rendererHTML, /id="find-replace-bar"/);
+assert.match(rendererHTML, /id="replace-current"/);
+assert.match(rendererHTML, /data-context-action="findReplace"/);
 
 const rendererJS = fs.readFileSync(
   path.join(root, "src/renderer/renderer.js"),
@@ -102,6 +105,10 @@ assert.match(rendererJS, /function sanitizedClipboardHTML/);
 assert.match(rendererJS, /function pasteIntoDesign/);
 assert.match(rendererJS, /function sourceContextAction/);
 assert.match(rendererJS, /function pastePlainTextForActiveSurface/);
+assert.match(rendererJS, /function performFind/);
+assert.match(rendererJS, /function replaceCurrentMatch/);
+assert.match(rendererJS, /function replaceAllMatches/);
+assert.match(rendererJS, /function searchableDesignTextNodes/);
 
 const guideJS = fs.readFileSync(
   path.join(root, "src/renderer/guide.js"),
@@ -143,6 +150,9 @@ assert.match(mainJS, /accelerator: "Ctrl\+P"/);
 assert.match(mainJS, /clipboard:read/);
 assert.match(mainJS, /clipboard:write/);
 assert.match(mainJS, /accelerator: "Ctrl\+Shift\+V"/);
+assert.match(mainJS, /accelerator: "Ctrl\+F"/);
+assert.match(mainJS, /accelerator: "Ctrl\+H"/);
+assert.match(mainJS, /send\("findNext"\)/);
 
 const pdfExportJS = fs.readFileSync(
   path.join(root, "src/pdf-export.js"),

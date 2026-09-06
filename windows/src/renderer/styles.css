@@ -27,6 +27,11 @@ body {
   font: 14px/1.45 "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 
+body {
+  display: grid;
+  grid-template-rows: 58px 36px auto minmax(0, 1fr) 24px;
+}
+
 button,
 select,
 input {
@@ -138,7 +143,87 @@ button.primary {
 .app-shell {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  height: calc(100% - 118px);
+  min-height: 0;
+}
+
+.find-replace-bar {
+  display: grid;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: #17212d;
+  gap: 6px;
+}
+
+.find-replace-bar[hidden],
+.replace-row[hidden] {
+  display: none;
+}
+
+.find-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.find-target {
+  width: 56px;
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.find-row input[type="text"] {
+  width: min(360px, 32vw);
+  min-width: 170px;
+  height: 30px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: #0f1720;
+  color: var(--text);
+}
+
+.find-row input[type="text"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, .2);
+}
+
+.find-row button {
+  height: 30px;
+  padding: 4px 9px;
+  border-color: var(--border);
+  background: #111923;
+}
+
+.match-case {
+  display: flex;
+  flex: none;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  gap: 4px;
+}
+
+.match-case input {
+  accent-color: var(--accent);
+}
+
+.find-status {
+  min-width: 86px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+#close-find {
+  margin-left: auto;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.replace-row {
+  padding-left: 0;
 }
 
 .document-tabs {

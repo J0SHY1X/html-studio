@@ -1,9 +1,19 @@
 import AppKit
 import SwiftUI
 
+struct EditorFindResult: Equatable {
+    let current: Int
+    let total: Int
+    let replaced: Int
+
+    static let empty = EditorFindResult(current: 0, total: 0, replaced: 0)
+}
+
 @MainActor
 final class CodeEditorController: ObservableObject {
     fileprivate weak var textView: NSTextView?
+    private var lastFindKey = ""
+    private var currentFindRange: NSRange?
 
     func undo() {
         guard let textView else { return }
@@ -24,6 +34,134 @@ final class CodeEditorController: ObservableObject {
         else { return }
         textView.window?.makeFirstResponder(textView)
         textView.insertText(value, replacementRange: textView.selectedRange())
+    }
+
+    func find(
+        _ query: String,
+        matchCase: Bool,
+        backwards: Bool = false,
+        reset: Bool = false
+    ) -> EditorFindResult {
+        guard let textView, !query.isEmpty else {
+            clearFind()
+            return .empty
+        }
+
+        let matches = findRanges(query, in: textView.string, matchCase: matchCase)
+        guard !matches.isEmpty else {
+            currentFindRange = nil
+            lastFindKey = findKey(query, matchCase: matchCase)
+            return .empty
+        }
+
+        let key = findKey(query, matchCase: matchCase)
+        let currentIndex = currentFindRange.flatMap { current in
+            matches.firstIndex(where: { NSEqualRanges($0, current) })
+        }
+        let nextIndex: Int
+        if !reset, key == lastFindKey, let currentIndex {
+            nextIndex = backwards
+                ? (currentIndex - 1 + matches.count) % matches.count
+                : (currentIndex + 1) % matches.count
+        } else if backwards {
+            let caret = textView.selectedRange().location
+            nextIndex = matches.lastIndex(where: { $0.location < caret }) ?? (matches.count - 1)
+        } else {
+            let caret = textView.selectedRange().location
+            nextIndex = matches.firstIndex(where: { $0.location >= caret }) ?? 0
+        }
+
+        let range = matches[nextIndex]
+        lastFindKey = key
+        currentFindRange = range
+        textView.setSelectedRange(range)
+        textView.scrollRangeToVisible(range)
+        return EditorFindResult(current: nextIndex + 1, total: matches.count, replaced: 0)
+    }
+
+    func replaceCurrent(
+        query: String,
+        replacement: String,
+        matchCase: Bool
+    ) -> EditorFindResult {
+        guard let textView, !query.isEmpty else { return .empty }
+        let matches = findRanges(query, in: textView.string, matchCase: matchCase)
+        guard !matches.isEmpty else {
+            currentFindRange = nil
+            return .empty
+        }
+
+        let selected = textView.selectedRange()
+        let target = matches.first(where: { NSEqualRanges($0, selected) })
+            ?? currentFindRange.flatMap { current in
+                matches.first(where: { NSEqualRanges($0, current) })
+            }
+            ?? matches[0]
+        textView.window?.makeFirstResponder(textView)
+        textView.insertText(replacement, replacementRange: target)
+        currentFindRange = nil
+        lastFindKey = ""
+        var result = find(query, matchCase: matchCase, reset: true)
+        result = EditorFindResult(
+            current: result.current,
+            total: result.total,
+            replaced: 1
+        )
+        return result
+    }
+
+    func replaceAll(
+        query: String,
+        replacement: String,
+        matchCase: Bool
+    ) -> EditorFindResult {
+        guard let textView, !query.isEmpty else { return .empty }
+        let matches = findRanges(query, in: textView.string, matchCase: matchCase)
+        guard !matches.isEmpty else { return .empty }
+
+        let mutable = NSMutableString(string: textView.string)
+        for range in matches.reversed() {
+            mutable.replaceCharacters(in: range, with: replacement)
+        }
+        textView.window?.makeFirstResponder(textView)
+        textView.insertText(
+            mutable as String,
+            replacementRange: NSRange(location: 0, length: (textView.string as NSString).length)
+        )
+        currentFindRange = nil
+        lastFindKey = ""
+        let remaining = findRanges(query, in: textView.string, matchCase: matchCase).count
+        return EditorFindResult(current: 0, total: remaining, replaced: matches.count)
+    }
+
+    func clearFind() {
+        lastFindKey = ""
+        currentFindRange = nil
+    }
+
+    private func findKey(_ query: String, matchCase: Bool) -> String {
+        "\(matchCase ? "1" : "0"):\(query)"
+    }
+
+    private func findRanges(
+        _ query: String,
+        in source: String,
+        matchCase: Bool
+    ) -> [NSRange] {
+        let text = source as NSString
+        let needleLength = (query as NSString).length
+        guard needleLength > 0, text.length >= needleLength else { return [] }
+        let options: NSString.CompareOptions = matchCase ? [] : [.caseInsensitive]
+        var ranges: [NSRange] = []
+        var location = 0
+        while location <= text.length - needleLength {
+            let searchRange = NSRange(location: location, length: text.length - location)
+            let match = text.range(of: query, options: options, range: searchRange)
+            guard match.location != NSNotFound else { break }
+            ranges.append(match)
+            location = match.location + max(1, match.length)
+        }
+        return ranges
     }
 }
 
@@ -48,6 +186,23 @@ private final class HTMLCodeTextView: NSTextView {
         addResponderItem("删除", action: #selector(delete(_:)), to: menu)
         menu.addItem(.separator())
         addResponderItem("全选", action: #selector(selectAll(_:)), to: menu)
+        menu.addItem(.separator())
+
+        let find = NSMenuItem(
+            title: "查找…",
+            action: #selector(showHTMLStudioFind(_:)),
+            keyEquivalent: ""
+        )
+        find.target = self
+        menu.addItem(find)
+
+        let replace = NSMenuItem(
+            title: "查找与替换…",
+            action: #selector(showHTMLStudioFindAndReplace(_:)),
+            keyEquivalent: ""
+        )
+        replace.target = self
+        menu.addItem(replace)
         return menu
     }
 
@@ -64,6 +219,14 @@ private final class HTMLCodeTextView: NSTextView {
     @objc private func pasteHTMLStudioPlainText(_ sender: Any?) {
         guard let value = NSPasteboard.general.string(forType: .string) else { return }
         insertText(value, replacementRange: selectedRange())
+    }
+
+    @objc private func showHTMLStudioFind(_ sender: Any?) {
+        NotificationCenter.default.post(name: .htmlStudioFind, object: nil)
+    }
+
+    @objc private func showHTMLStudioFindAndReplace(_ sender: Any?) {
+        NotificationCenter.default.post(name: .htmlStudioFindAndReplace, object: nil)
     }
 }
 

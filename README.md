@@ -6,12 +6,13 @@
 
 A local-first HTML source and visual editor for macOS and Windows, with Markdown, DOCX and PDF export.
 
-[下载 v0.3.8](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.8) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+[下载 v0.3.9](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.9) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
 
 ## 功能
 
 - 源码/可视化双向同步，多文档标签页与实时预览。
 - 中文输入法组合输入保护，撤销/重做、普通粘贴和纯文本粘贴。
+- 在源码或可视化页面中查找、循环定位、区分大小写、替换当前或全部替换。
 - Word 式字体、字号、字形、文字颜色、背景颜色、段落、列表和表格工具。
 - 源码与页面右键菜单；复制页面格式、追加空白页和页码调整。
 - 保存 HTML，导出 Markdown、DOCX、分页 PDF，以及系统打印。

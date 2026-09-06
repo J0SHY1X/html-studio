@@ -5,11 +5,14 @@ const asar = require("@electron/asar");
 const { editWindowsResources } = require("app-builder-lib/out/util/resEdit.js");
 
 const root = path.resolve(__dirname, "..");
-const baseDirectory = path.join(root, "dist", "win-unpacked");
+const packageJSON = require(path.join(root, "package.json"));
+const version = packageJSON.version;
+const baseDirectory = process.env.HTML_STUDIO_BASE_WINDOWS_DIR ||
+  path.join(root, "dist", "win-unpacked");
 const outputDirectory = path.join(
   root,
   "dist",
-  "HTML Studio-0.3.8-x64-Portable"
+  `HTML Studio-${version}-x64-Portable`
 );
 const baseAsar = path.join(baseDirectory, "resources", "app.asar");
 const outputAsar = path.join(outputDirectory, "resources", "app.asar");
@@ -50,8 +53,8 @@ async function main() {
   await editWindowsResources({
     file: outputExecutable,
     iconPath,
-    fileVersion: "0.3.8",
-    productVersion: "0.3.8",
+    fileVersion: version,
+    productVersion: version,
     versionStrings: {
       CompanyName: "Codex",
       FileDescription: "HTML Studio",

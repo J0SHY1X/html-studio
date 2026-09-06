@@ -112,6 +112,20 @@ const elements = {
   saveButton: document.querySelector("#save-button"),
   undoButton: document.querySelector("#undo-button"),
   redoButton: document.querySelector("#redo-button"),
+  findButton: document.querySelector("#find-button"),
+  findBar: document.querySelector("#find-replace-bar"),
+  findTarget: document.querySelector("#find-target"),
+  findInput: document.querySelector("#find-input"),
+  replaceInput: document.querySelector("#replace-input"),
+  replaceRow: document.querySelector("#replace-row"),
+  findPreviousButton: document.querySelector("#find-previous"),
+  findNextButton: document.querySelector("#find-next"),
+  matchCase: document.querySelector("#match-case"),
+  findStatus: document.querySelector("#find-status"),
+  toggleReplaceButton: document.querySelector("#toggle-replace"),
+  closeFindButton: document.querySelector("#close-find"),
+  replaceCurrentButton: document.querySelector("#replace-current"),
+  replaceAllButton: document.querySelector("#replace-all"),
   exportMarkdownButton: document.querySelector("#export-markdown"),
   exportDOCXButton: document.querySelector("#export-docx"),
   exportPDFButton: document.querySelector("#export-pdf"),
@@ -129,6 +143,12 @@ const workspaceState = {
   mode: "split",
   toastTimer: null,
   selectedHistoryId: null
+};
+
+const findState = {
+  key: "",
+  matches: [],
+  currentIndex: -1
 };
 
 function newId() {
@@ -398,6 +418,15 @@ function refreshActiveDocument() {
   updateOutline();
   setDirty(documentValue.dirty, documentValue);
   renderPreview();
+  clearFindState();
+  if (!elements.findBar.hidden) {
+    updateFindControls();
+    if (workspaceState.activeEditor === "source" && elements.findInput.value) {
+      performFind(false, true);
+    } else {
+      setFindStatus();
+    }
+  }
 }
 
 function selectDocument(documentValue) {
@@ -1169,6 +1198,11 @@ async function sourceContextAction(action) {
 
 async function contextAction(action) {
   hideContextMenu();
+  if (action === "find" || action === "findReplace") {
+    activateEditorSurface(workspaceState.contextTarget);
+    openFindBar(action === "findReplace");
+    return;
+  }
   if (workspaceState.contextTarget === "source") {
     await sourceContextAction(action);
     return;
@@ -1612,16 +1646,335 @@ function setWorkspaceMode(mode) {
   applyWorkspaceMode(workspaceState.mode);
 }
 
+function clearFindState() {
+  findState.key = "";
+  findState.matches = [];
+  findState.currentIndex = -1;
+}
+
+function findSearchKey(query) {
+  return [
+    activeDocument()?.id || "",
+    workspaceState.activeEditor,
+    elements.matchCase.checked ? "1" : "0",
+    query
+  ].join(":");
+}
+
+function comparableFindText(value) {
+  const text = String(value || "");
+  return elements.matchCase.checked ? text : text.toLocaleLowerCase();
+}
+
+function sourceFindMatches(query) {
+  const needle = comparableFindText(query);
+  const source = comparableFindText(elements.source.value);
+  if (!needle) return [];
+  const matches = [];
+  let offset = 0;
+  while (offset <= source.length - needle.length) {
+    const index = source.indexOf(needle, offset);
+    if (index < 0) break;
+    matches.push({ start: index, end: index + String(query).length });
+    offset = index + Math.max(1, needle.length);
+  }
+  return matches;
+}
+
+function searchableDesignTextNodes() {
+  const frameDocument = designDocument();
+  if (!frameDocument?.body) return [];
+  const nodes = [];
+  const walker = frameDocument.createTreeWalker(
+    frameDocument.body,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node) {
+        if (!node.nodeValue?.length) return NodeFilter.FILTER_REJECT;
+        const parent = node.parentElement;
+        if (!parent || parent.closest(
+          "script,style,noscript,textarea,[data-html-studio-ui]"
+        )) return NodeFilter.FILTER_REJECT;
+        const style = designWindow().getComputedStyle(parent);
+        if (style.display === "none" || style.visibility === "hidden") {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+  let node = walker.nextNode();
+  while (node) {
+    nodes.push(node);
+    node = walker.nextNode();
+  }
+  return nodes;
+}
+
+function designFindMatches(query) {
+  const needle = comparableFindText(query);
+  if (!needle) return [];
+  const matches = [];
+  searchableDesignTextNodes().forEach((node) => {
+    const source = comparableFindText(node.nodeValue);
+    let offset = 0;
+    while (offset <= source.length - needle.length) {
+      const index = source.indexOf(needle, offset);
+      if (index < 0) break;
+      matches.push({ node, start: index, end: index + String(query).length });
+      offset = index + Math.max(1, needle.length);
+    }
+  });
+  return matches;
+}
+
+function buildFindMatches(query) {
+  return workspaceState.activeEditor === "source"
+    ? sourceFindMatches(query)
+    : designFindMatches(query);
+}
+
+function selectFindMatch(index) {
+  const match = findState.matches[index];
+  if (!match) return false;
+  if (workspaceState.activeEditor === "source") {
+    elements.source.setSelectionRange(match.start, match.end);
+    const style = getComputedStyle(elements.source);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 20;
+    const line = elements.source.value.slice(0, match.start).split("\n").length - 1;
+    elements.source.scrollTop = Math.max(
+      0,
+      line * lineHeight - elements.source.clientHeight / 2
+    );
+    workspaceState.contextSourceSelection = {
+      start: match.start,
+      end: match.end
+    };
+    return true;
+  }
+
+  if (!match.node?.isConnected) return false;
+  const frameDocument = designDocument();
+  const selection = designWindow()?.getSelection();
+  if (!frameDocument || !selection) return false;
+  const range = frameDocument.createRange();
+  range.setStart(match.node, match.start);
+  range.setEnd(match.node, match.end);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  state.savedRange = range.cloneRange();
+  markActivePage(match.node);
+  match.node.parentElement?.scrollIntoView({
+    behavior: "smooth",
+    block: "center",
+    inline: "nearest"
+  });
+  return true;
+}
+
+function setFindStatus(result = {}) {
+  const replaced = Number(result.replaced || 0);
+  const total = Number(result.total || 0);
+  const current = Number(result.current || 0);
+  if (replaced > 0) {
+    elements.findStatus.textContent = total > 0
+      ? `已替换 ${replaced} 处 · 尚有 ${total} 处`
+      : `已替换 ${replaced} 处`;
+  } else if (!elements.findInput.value) {
+    elements.findStatus.textContent = "输入查找内容";
+  } else if (!total) {
+    elements.findStatus.textContent = "未找到";
+  } else {
+    elements.findStatus.textContent = `${Math.max(1, current)} / ${total}`;
+  }
+}
+
+function canReplaceFindMatches() {
+  return !isGuide() && (
+    workspaceState.activeEditor === "source" || Boolean(state.editEnabled)
+  );
+}
+
+function updateFindControls() {
+  const hasQuery = Boolean(elements.findInput.value);
+  elements.findTarget.textContent = workspaceState.activeEditor === "source"
+    ? "源码"
+    : "页面";
+  elements.findPreviousButton.disabled = !hasQuery;
+  elements.findNextButton.disabled = !hasQuery;
+  elements.replaceCurrentButton.disabled = !hasQuery || !canReplaceFindMatches();
+  elements.replaceAllButton.disabled = !hasQuery || !canReplaceFindMatches();
+}
+
+function performFind(backwards = false, reset = false) {
+  const query = elements.findInput.value;
+  updateFindControls();
+  if (!query) {
+    clearFindState();
+    setFindStatus();
+    return { current: 0, total: 0, replaced: 0 };
+  }
+  const key = findSearchKey(query);
+  const sameSearch = key === findState.key;
+  const previousIndex = findState.currentIndex;
+  const matches = buildFindMatches(query);
+  findState.key = key;
+  findState.matches = matches;
+  if (!matches.length) {
+    findState.currentIndex = -1;
+    const result = { current: 0, total: 0, replaced: 0 };
+    setFindStatus(result);
+    return result;
+  }
+  if (!reset && sameSearch && previousIndex >= 0) {
+    findState.currentIndex = backwards
+      ? (previousIndex - 1 + matches.length) % matches.length
+      : (previousIndex + 1) % matches.length;
+  } else {
+    findState.currentIndex = backwards ? matches.length - 1 : 0;
+  }
+  selectFindMatch(findState.currentIndex);
+  const result = {
+    current: findState.currentIndex + 1,
+    total: matches.length,
+    replaced: 0
+  };
+  setFindStatus(result);
+  return result;
+}
+
+function selectedTextForFind() {
+  if (workspaceState.activeEditor === "source") {
+    return elements.source.value.slice(
+      elements.source.selectionStart,
+      elements.source.selectionEnd
+    );
+  }
+  return designWindow()?.getSelection()?.toString() || "";
+}
+
+function openFindBar(withReplace = false) {
+  hideContextMenu();
+  elements.findBar.hidden = false;
+  if (withReplace) elements.replaceRow.hidden = false;
+  const selected = selectedTextForFind().replaceAll(/\r?\n/g, " ").trim();
+  if (!elements.findInput.value && selected && selected.length <= 200) {
+    elements.findInput.value = selected;
+  }
+  updateFindControls();
+  if (elements.findInput.value) performFind(false, true);
+  else setFindStatus();
+  elements.findInput.focus({ preventScroll: true });
+  elements.findInput.select();
+}
+
+function closeFindBar() {
+  elements.findBar.hidden = true;
+  clearFindState();
+  setFindStatus();
+}
+
+function activateEditorSurface(surface) {
+  const changed = workspaceState.activeEditor !== surface;
+  workspaceState.activeEditor = surface;
+  if (!elements.findBar.hidden) {
+    updateFindControls();
+    if (changed && elements.findInput.value) performFind(false, true);
+  }
+}
+
+function replaceSourceRange(start, end, replacement, action) {
+  elements.source.focus({ preventScroll: true });
+  elements.source.setSelectionRange(start, end);
+  const inserted = document.execCommand("insertText", false, replacement);
+  if (!inserted) elements.source.setRangeText(replacement, start, end, "end");
+  syncSourceEditor(action);
+  elements.findInput.focus({ preventScroll: true });
+}
+
+function replaceCurrentMatch() {
+  const query = elements.findInput.value;
+  if (!query || !canReplaceFindMatches()) return;
+  const key = findSearchKey(query);
+  const previousIndex = key === findState.key && findState.currentIndex >= 0
+    ? findState.currentIndex
+    : 0;
+  const matches = buildFindMatches(query);
+  if (!matches.length) {
+    clearFindState();
+    setFindStatus({ total: 0 });
+    return;
+  }
+  const index = Math.min(previousIndex, matches.length - 1);
+  const match = matches[index];
+  const replacement = elements.replaceInput.value;
+  if (workspaceState.activeEditor === "source") {
+    replaceSourceRange(match.start, match.end, replacement, "替换 HTML 源码");
+  } else {
+    match.node.replaceData(match.start, match.end - match.start, replacement);
+    captureDesignHTML("替换页面文字");
+    elements.findInput.focus({ preventScroll: true });
+  }
+  const remaining = buildFindMatches(query);
+  findState.key = findSearchKey(query);
+  findState.matches = remaining;
+  findState.currentIndex = remaining.length ? Math.min(index, remaining.length - 1) : -1;
+  if (findState.currentIndex >= 0) selectFindMatch(findState.currentIndex);
+  setFindStatus({
+    current: findState.currentIndex + 1,
+    total: remaining.length,
+    replaced: 1
+  });
+}
+
+function replaceAllMatches() {
+  const query = elements.findInput.value;
+  if (!query || !canReplaceFindMatches()) return;
+  const matches = buildFindMatches(query);
+  if (!matches.length) {
+    clearFindState();
+    setFindStatus({ total: 0 });
+    return;
+  }
+  const replacement = elements.replaceInput.value;
+  if (workspaceState.activeEditor === "source") {
+    let updated = "";
+    let offset = 0;
+    matches.forEach((match) => {
+      updated += elements.source.value.slice(offset, match.start) + replacement;
+      offset = match.end;
+    });
+    updated += elements.source.value.slice(offset);
+    replaceSourceRange(
+      0,
+      elements.source.value.length,
+      updated,
+      `全部替换 HTML 源码（${matches.length} 处）`
+    );
+  } else {
+    [...matches].reverse().forEach((match) => {
+      match.node.replaceData(match.start, match.end - match.start, replacement);
+    });
+    captureDesignHTML(`全部替换页面文字（${matches.length} 处）`);
+    elements.findInput.focus({ preventScroll: true });
+  }
+  const remaining = buildFindMatches(query);
+  findState.key = findSearchKey(query);
+  findState.matches = remaining;
+  findState.currentIndex = -1;
+  setFindStatus({ total: remaining.length, replaced: matches.length });
+}
+
 elements.source.addEventListener("focus", () => {
-  workspaceState.activeEditor = "source";
+  activateEditorSurface("source");
 });
 elements.source.addEventListener("pointerdown", () => {
-  workspaceState.activeEditor = "source";
+  activateEditorSurface("source");
 });
 elements.source.addEventListener("input", () => syncSourceEditor());
 elements.source.addEventListener("contextmenu", (event) => {
   event.preventDefault();
-  workspaceState.activeEditor = "source";
+  activateEditorSurface("source");
   workspaceState.contextSourceSelection = {
     start: elements.source.selectionStart,
     end: elements.source.selectionEnd
@@ -1633,6 +1986,10 @@ elements.frame.addEventListener("load", () => {
   const frameDocument = designDocument();
   if (!frameDocument?.body) return;
   setDesignEditable();
+  if (!elements.findBar.hidden && workspaceState.activeEditor === "design" &&
+      elements.findInput.value) {
+    performFind(false, true);
+  }
   frameDocument.addEventListener("selectionchange", saveSelection);
   frameDocument.addEventListener("compositionstart", () => {
     if (isGuide()) return;
@@ -1682,6 +2039,22 @@ elements.frame.addEventListener("load", () => {
   frameDocument.addEventListener("keydown", (event) => {
     if (!event.ctrlKey || event.altKey || event.metaKey) return;
     const key = event.key.toLowerCase();
+    if (key === "f" || key === "h") {
+      event.preventDefault();
+      activateEditorSurface("design");
+      openFindBar(key === "h");
+      return;
+    }
+    if (key === "g") {
+      event.preventDefault();
+      activateEditorSurface("design");
+      if (elements.findBar.hidden || !elements.findInput.value) {
+        openFindBar(false);
+      } else {
+        performFind(event.shiftKey);
+      }
+      return;
+    }
     if (key === "v" && event.shiftKey) {
       event.preventDefault();
       workspaceState.activeEditor = "design";
@@ -1702,7 +2075,7 @@ elements.frame.addEventListener("load", () => {
   }, true);
   frameDocument.addEventListener("blur", saveSelection, true);
   frameDocument.addEventListener("pointerdown", (event) => {
-    workspaceState.activeEditor = "design";
+    activateEditorSurface("design");
     markActivePage(event.target);
     hideContextMenu();
   }, true);
@@ -1778,24 +2151,25 @@ document.querySelectorAll("[data-context-command]").forEach((button) => {
   button.addEventListener("mousedown", (event) => event.preventDefault());
   button.addEventListener("click", () => {
     hideContextMenu();
-    workspaceState.activeEditor = "design";
+    activateEditorSurface("design");
     executeCommand(button.dataset.contextCommand, button.dataset.contextValue || null);
   });
 });
 document.querySelector("#context-foreground-color").addEventListener("change", (event) => {
   hideContextMenu();
-  workspaceState.activeEditor = "design";
+  activateEditorSurface("design");
   executeCommand("foreColor", event.target.value);
 });
 document.querySelector("#context-highlight-color").addEventListener("change", (event) => {
   hideContextMenu();
-  workspaceState.activeEditor = "design";
+  activateEditorSurface("design");
   executeCommand("hiliteColor", event.target.value);
 });
 
 elements.editToggle.addEventListener("change", () => {
   state.editEnabled = elements.editToggle.checked;
   setDesignEditable();
+  updateFindControls();
   persistWorkspace();
 });
 
@@ -1811,6 +2185,38 @@ elements.undoButton.addEventListener("mousedown", (event) => event.preventDefaul
 elements.redoButton.addEventListener("mousedown", (event) => event.preventDefault());
 elements.undoButton.addEventListener("click", () => performHistoryCommand("undo"));
 elements.redoButton.addEventListener("click", () => performHistoryCommand("redo"));
+elements.findButton.addEventListener("click", () => openFindBar(false));
+elements.findInput.addEventListener("input", () => performFind(false, true));
+elements.findInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    performFind(event.shiftKey);
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeFindBar();
+  }
+});
+elements.replaceInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    replaceCurrentMatch();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeFindBar();
+  }
+});
+elements.matchCase.addEventListener("change", () => performFind(false, true));
+elements.findPreviousButton.addEventListener("click", () => performFind(true));
+elements.findNextButton.addEventListener("click", () => performFind(false));
+elements.toggleReplaceButton.addEventListener("click", () => {
+  elements.replaceRow.hidden = !elements.replaceRow.hidden;
+  if (!elements.replaceRow.hidden) {
+    elements.replaceInput.focus({ preventScroll: true });
+  }
+});
+elements.closeFindButton.addEventListener("click", closeFindBar);
+elements.replaceCurrentButton.addEventListener("click", replaceCurrentMatch);
+elements.replaceAllButton.addEventListener("click", replaceAllMatches);
 document.querySelector("#export-markdown").addEventListener("click", exportMarkdown);
 document.querySelector("#export-docx").addEventListener("click", exportDOCX);
 document.querySelector("#export-pdf").addEventListener("click", exportPDF);
@@ -1842,7 +2248,15 @@ window.htmlStudioAPI.onMenuCommand((command) => {
     showGuide,
     undo: () => performHistoryCommand("undo"),
     redo: () => performHistoryCommand("redo"),
-    pastePlainText: pastePlainTextForActiveSurface
+    pastePlainText: pastePlainTextForActiveSurface,
+    find: () => openFindBar(false),
+    findReplace: () => openFindBar(true),
+    findNext: () => elements.findBar.hidden || !elements.findInput.value
+      ? openFindBar(false)
+      : performFind(false),
+    findPrevious: () => elements.findBar.hidden || !elements.findInput.value
+      ? openFindBar(false)
+      : performFind(true)
   };
   handlers[command]?.();
 });
@@ -1850,26 +2264,39 @@ window.htmlStudioAPI.onMenuCommand((command) => {
 window.addEventListener("beforeunload", persistWorkspace);
 
 window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !elements.findBar.hidden) {
+    event.preventDefault();
+    closeFindBar();
+    return;
+  }
   if (!event.ctrlKey) return;
-  if (!event.altKey && event.shiftKey && event.key.toLowerCase() === "v") {
+  const key = event.key.toLowerCase();
+  if (!event.altKey && (key === "f" || key === "h")) {
+    event.preventDefault();
+    openFindBar(key === "h");
+  } else if (!event.altKey && key === "g") {
+    event.preventDefault();
+    if (elements.findBar.hidden || !elements.findInput.value) openFindBar(false);
+    else performFind(event.shiftKey);
+  } else if (!event.altKey && event.shiftKey && key === "v") {
     event.preventDefault();
     pastePlainTextForActiveSurface();
-  } else if (!event.altKey && event.key.toLowerCase() === "z") {
+  } else if (!event.altKey && key === "z") {
     event.preventDefault();
     performHistoryCommand(event.shiftKey ? "redo" : "undo");
-  } else if (!event.altKey && event.key.toLowerCase() === "y") {
+  } else if (!event.altKey && key === "y") {
     event.preventDefault();
     performHistoryCommand("redo");
-  } else if (event.altKey && event.key.toLowerCase() === "h") {
+  } else if (event.altKey && key === "h") {
     event.preventDefault();
     showHistory();
-  } else if (event.key.toLowerCase() === "n") {
+  } else if (key === "n") {
     event.preventDefault();
     newDocument();
-  } else if (event.key.toLowerCase() === "o") {
+  } else if (key === "o") {
     event.preventDefault();
     openDocument();
-  } else if (event.key.toLowerCase() === "s") {
+  } else if (key === "s") {
     event.preventDefault();
     saveDocument(event.shiftKey);
   }

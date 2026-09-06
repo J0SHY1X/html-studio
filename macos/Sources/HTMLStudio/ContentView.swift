@@ -39,6 +39,13 @@ private struct DocumentEditorView: View {
     @State private var designEditing = true
     @State private var activeEditorSurface: ActiveEditorSurface = .design
     @State private var isPreparingPrint = false
+    @State private var showFindBar = false
+    @State private var showReplaceField = false
+    @State private var findQuery = ""
+    @State private var replacementText = ""
+    @State private var matchCase = false
+    @State private var findStatusText = "输入查找内容"
+    @FocusState private var findFieldFocused: Bool
 
     private let conversionService = ConversionService.shared
 
@@ -59,11 +66,98 @@ private struct DocumentEditorView: View {
     }
 
     private var editorWithCommands: some View {
+        editorWithEditingCommands
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioFind)) { _ in
+                openFindBar(replacing: false)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioFindAndReplace)) { _ in
+                openFindBar(replacing: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioFindNext)) { _ in
+                if showFindBar, !findQuery.isEmpty {
+                    performFind()
+                } else {
+                    openFindBar(replacing: false)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioFindPrevious)) { _ in
+                if showFindBar, !findQuery.isEmpty {
+                    performFind(backwards: true)
+                } else {
+                    openFindBar(replacing: false)
+                }
+            }
+            .onChange(of: findQuery) { _ in
+                if showFindBar { performFind(reset: true) }
+            }
+            .onChange(of: matchCase) { _ in
+                if showFindBar { performFind(reset: true) }
+            }
+    }
+
+    private var editorWithEditingCommands: some View {
+        editorWithExportCommands
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioShowHistory)) { _ in
+                showHistory = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioUndo)) { _ in
+                performUndo()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioRedo)) { _ in
+                performRedo()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioPastePlainText)) { _ in
+                performPastePlainText()
+            }
+    }
+
+    private var editorWithExportCommands: some View {
+        editorWithFileCommands
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioExportMarkdown)) { _ in
+                exportMarkdown()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioExportDOCX)) { _ in
+                exportDOCX()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioExportPDF)) { _ in
+                exportPDF()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioPrint)) { _ in
+                printDocument()
+            }
+    }
+
+    private var editorWithFileCommands: some View {
+        editorLayout
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioNewDocument)) { _ in
+                workspace.newDocument()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioOpenDocument)) { _ in
+                openFromPanel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioOpenExternalFiles)) { notification in
+                let urls = notification.userInfo?["urls"] as? [URL] ?? []
+                urls.forEach(open)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocument)) { _ in
+                _ = save(document)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocumentAs)) { _ in
+                _ = saveAs(document)
+            }
+    }
+
+    private var editorLayout: some View {
         VStack(spacing: 0) {
             header
             Divider()
             tabBar
             Divider()
+
+            if showFindBar {
+                findReplaceBar
+                Divider()
+            }
 
             HSplitView {
                 if showSidebar {
@@ -87,46 +181,6 @@ private struct DocumentEditorView: View {
         }
         .onDisappear {
             workspace.persistAllDrafts()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioNewDocument)) { _ in
-            workspace.newDocument()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioOpenDocument)) { _ in
-            openFromPanel()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioOpenExternalFiles)) { notification in
-            guard let urls = notification.userInfo?["urls"] as? [URL] else { return }
-            urls.forEach(open)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocument)) { _ in
-            _ = save(document)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocumentAs)) { _ in
-            _ = saveAs(document)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioExportMarkdown)) { _ in
-            exportMarkdown()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioExportDOCX)) { _ in
-            exportDOCX()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioExportPDF)) { _ in
-            exportPDF()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioPrint)) { _ in
-            printDocument()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioShowHistory)) { _ in
-            showHistory = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioUndo)) { _ in
-            performUndo()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioRedo)) { _ in
-            performRedo()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .htmlStudioPastePlainText)) { _ in
-            performPastePlainText()
         }
     }
 
@@ -172,6 +226,13 @@ private struct DocumentEditorView: View {
                 Label("重做", systemImage: "arrow.uturn.forward")
             }
             .help("重做当前编辑区域的下一步操作（⇧⌘Z）")
+
+            Button {
+                openFindBar(replacing: false)
+            } label: {
+                Label("查找", systemImage: "magnifyingglass")
+            }
+            .help("在当前编辑区域查找（⌘F）")
 
             Spacer()
 
@@ -249,6 +310,93 @@ private struct DocumentEditorView: View {
         }
         .frame(height: 36)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var findReplaceBar: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 7) {
+                Label(
+                    activeEditorSurface == .source ? "源码" : "页面",
+                    systemImage: activeEditorSurface == .source
+                        ? "chevron.left.forwardslash.chevron.right"
+                        : "doc.text.magnifyingglass"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 62, alignment: .leading)
+
+                TextField("查找", text: $findQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($findFieldFocused)
+                    .onSubmit { performFind() }
+                    .frame(minWidth: 180, idealWidth: 300, maxWidth: 440)
+
+                Button(action: { performFind(backwards: true) }) {
+                    Image(systemName: "chevron.up")
+                }
+                .help("查找上一个（⇧⌘G）")
+                .disabled(findQuery.isEmpty)
+
+                Button(action: { performFind() }) {
+                    Image(systemName: "chevron.down")
+                }
+                .help("查找下一个（⌘G）")
+                .disabled(findQuery.isEmpty)
+
+                Toggle("区分大小写", isOn: $matchCase)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+
+                Text(findStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(minWidth: 72, alignment: .leading)
+
+                Spacer(minLength: 4)
+
+                Button {
+                    showReplaceField.toggle()
+                } label: {
+                    Image(systemName: showReplaceField ? "chevron.up.square" : "chevron.down.square")
+                }
+                .help(showReplaceField ? "隐藏替换栏" : "显示替换栏")
+
+                Button(action: closeFindBar) {
+                    Image(systemName: "xmark")
+                }
+                .help("关闭查找栏（Esc）")
+            }
+
+            if showReplaceField {
+                HStack(spacing: 7) {
+                    Text("替换为")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 62, alignment: .leading)
+
+                    TextField("替换内容", text: $replacementText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { replaceCurrentMatch() }
+                        .frame(minWidth: 180, idealWidth: 300, maxWidth: 440)
+
+                    Button("替换", action: replaceCurrentMatch)
+                        .disabled(findQuery.isEmpty || !canReplaceInActiveSurface)
+                    Button("全部替换", action: replaceAllMatches)
+                        .disabled(findQuery.isEmpty || !canReplaceInActiveSurface)
+                    Spacer()
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .onExitCommand(perform: closeFindBar)
+    }
+
+    private var canReplaceInActiveSurface: Bool {
+        activeEditorSurface == .source || designEditing
     }
 
     private var sidebar: some View {
@@ -446,6 +594,109 @@ private struct DocumentEditorView: View {
             codeEditorController.pastePlainText()
         case .design:
             document.designController.pastePlainText()
+        }
+    }
+
+    private func openFindBar(replacing: Bool) {
+        showFindBar = true
+        if replacing { showReplaceField = true }
+        findStatusText = findQuery.isEmpty ? "输入查找内容" : findStatusText
+        DispatchQueue.main.async {
+            findFieldFocused = true
+        }
+    }
+
+    private func closeFindBar() {
+        showFindBar = false
+        findFieldFocused = false
+        codeEditorController.clearFind()
+        document.designController.clearFind()
+        findStatusText = "输入查找内容"
+    }
+
+    private func performFind(backwards: Bool = false, reset: Bool = false) {
+        guard !findQuery.isEmpty else {
+            codeEditorController.clearFind()
+            document.designController.clearFind()
+            findStatusText = "输入查找内容"
+            return
+        }
+        let query = findQuery
+        switch activeEditorSurface {
+        case .source:
+            let result = codeEditorController.find(
+                query,
+                matchCase: matchCase,
+                backwards: backwards,
+                reset: reset
+            )
+            updateFindStatus(result)
+        case .design:
+            document.designController.find(
+                query,
+                matchCase: matchCase,
+                backwards: backwards,
+                reset: reset
+            ) { result in
+                guard query == findQuery else { return }
+                updateFindStatus(result)
+            }
+        }
+    }
+
+    private func replaceCurrentMatch() {
+        guard !findQuery.isEmpty, canReplaceInActiveSurface else { return }
+        let query = findQuery
+        switch activeEditorSurface {
+        case .source:
+            updateFindStatus(codeEditorController.replaceCurrent(
+                query: query,
+                replacement: replacementText,
+                matchCase: matchCase
+            ))
+        case .design:
+            document.designController.replaceCurrent(
+                query: query,
+                replacement: replacementText,
+                matchCase: matchCase
+            ) { result in
+                guard query == findQuery else { return }
+                updateFindStatus(result)
+            }
+        }
+    }
+
+    private func replaceAllMatches() {
+        guard !findQuery.isEmpty, canReplaceInActiveSurface else { return }
+        let query = findQuery
+        switch activeEditorSurface {
+        case .source:
+            updateFindStatus(codeEditorController.replaceAll(
+                query: query,
+                replacement: replacementText,
+                matchCase: matchCase
+            ))
+        case .design:
+            document.designController.replaceAll(
+                query: query,
+                replacement: replacementText,
+                matchCase: matchCase
+            ) { result in
+                guard query == findQuery else { return }
+                updateFindStatus(result)
+            }
+        }
+    }
+
+    private func updateFindStatus(_ result: EditorFindResult) {
+        if result.replaced > 0 {
+            findStatusText = result.total > 0
+                ? "已替换 \(result.replaced) 处 · 尚有 \(result.total) 处"
+                : "已替换 \(result.replaced) 处"
+        } else if result.total == 0 {
+            findStatusText = "未找到"
+        } else {
+            findStatusText = "\(max(1, result.current)) / \(result.total)"
         }
     }
 

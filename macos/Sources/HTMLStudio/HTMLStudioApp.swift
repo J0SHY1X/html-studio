@@ -15,6 +15,10 @@ extension Notification.Name {
     static let htmlStudioUndo = Notification.Name("HTMLStudio.undo")
     static let htmlStudioRedo = Notification.Name("HTMLStudio.redo")
     static let htmlStudioPastePlainText = Notification.Name("HTMLStudio.pastePlainText")
+    static let htmlStudioFind = Notification.Name("HTMLStudio.find")
+    static let htmlStudioFindAndReplace = Notification.Name("HTMLStudio.findAndReplace")
+    static let htmlStudioFindNext = Notification.Name("HTMLStudio.findNext")
+    static let htmlStudioFindPrevious = Notification.Name("HTMLStudio.findPrevious")
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -63,6 +67,33 @@ struct HTMLStudioApp: App {
                     )
                 }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
+            }
+
+            CommandMenu("查找") {
+                Button("查找…") {
+                    NotificationCenter.default.post(name: .htmlStudioFind, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: [.command])
+
+                Button("查找与替换…") {
+                    NotificationCenter.default.post(
+                        name: .htmlStudioFindAndReplace,
+                        object: nil
+                    )
+                }
+                .keyboardShortcut("f", modifiers: [.command, .option])
+
+                Divider()
+
+                Button("查找下一个") {
+                    NotificationCenter.default.post(name: .htmlStudioFindNext, object: nil)
+                }
+                .keyboardShortcut("g", modifiers: [.command])
+
+                Button("查找上一个") {
+                    NotificationCenter.default.post(name: .htmlStudioFindPrevious, object: nil)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
             }
 
             CommandGroup(replacing: .newItem) {

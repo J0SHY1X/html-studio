@@ -276,7 +276,28 @@ function createApplicationMenu() {
           accelerator: "Ctrl+Shift+V",
           click: () => send("pastePlainText")
         },
-        { role: "selectAll", label: "全选" }
+        { role: "selectAll", label: "全选" },
+        { type: "separator" },
+        {
+          label: "查找…",
+          accelerator: "Ctrl+F",
+          click: () => send("find")
+        },
+        {
+          label: "查找与替换…",
+          accelerator: "Ctrl+H",
+          click: () => send("findReplace")
+        },
+        {
+          label: "查找下一个",
+          accelerator: "Ctrl+G",
+          click: () => send("findNext")
+        },
+        {
+          label: "查找上一个",
+          accelerator: "Ctrl+Shift+G",
+          click: () => send("findPrevious")
+        }
       ]
     },
     {

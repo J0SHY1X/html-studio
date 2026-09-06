@@ -78,12 +78,67 @@ final class DesignEditorController: ObservableObject {
         invoke("pageAction", arguments: [action.rawValue])
     }
 
-    private func invoke(_ function: String, arguments: [Any]) {
-        guard let webView else { return }
+    func find(
+        _ query: String,
+        matchCase: Bool,
+        backwards: Bool = false,
+        reset: Bool = false,
+        completion: @escaping (EditorFindResult) -> Void
+    ) {
+        invoke(
+            "find",
+            arguments: [query, matchCase, backwards, reset]
+        ) { value in
+            completion(Self.findResult(from: value))
+        }
+    }
+
+    func replaceCurrent(
+        query: String,
+        replacement: String,
+        matchCase: Bool,
+        completion: @escaping (EditorFindResult) -> Void
+    ) {
+        invoke(
+            "replaceCurrent",
+            arguments: [query, replacement, matchCase]
+        ) { value in
+            completion(Self.findResult(from: value))
+        }
+    }
+
+    func replaceAll(
+        query: String,
+        replacement: String,
+        matchCase: Bool,
+        completion: @escaping (EditorFindResult) -> Void
+    ) {
+        invoke(
+            "replaceAll",
+            arguments: [query, replacement, matchCase]
+        ) { value in
+            completion(Self.findResult(from: value))
+        }
+    }
+
+    func clearFind() {
+        invoke("clearFind", arguments: [])
+    }
+
+    private func invoke(
+        _ function: String,
+        arguments: [Any],
+        completion: ((Any?) -> Void)? = nil
+    ) {
+        guard let webView else {
+            completion?(nil)
+            return
+        }
         guard
             let data = try? JSONSerialization.data(withJSONObject: arguments),
             let json = String(data: data, encoding: .utf8)
         else {
+            completion?(nil)
             return
         }
         let script = """
@@ -91,13 +146,25 @@ final class DesignEditorController: ObservableObject {
           window.__HTMLStudioEditor.\(function).apply(window.__HTMLStudioEditor, \(json));
         }
         """
-        webView.evaluateJavaScript(script) { [weak self] _, error in
+        webView.evaluateJavaScript(script) { [weak self] value, error in
             if let error {
                 Task { @MainActor in
                     self?.statusText = "编辑命令未执行：\(error.localizedDescription)"
+                    completion?(nil)
                 }
+            } else {
+                completion?(value)
             }
         }
+    }
+
+    private static func findResult(from value: Any?) -> EditorFindResult {
+        guard let payload = value as? [String: Any] else { return .empty }
+        return EditorFindResult(
+            current: (payload["current"] as? NSNumber)?.intValue ?? 0,
+            total: (payload["total"] as? NSNumber)?.intValue ?? 0,
+            replaced: (payload["replaced"] as? NSNumber)?.intValue ?? 0
+        )
     }
 }
 

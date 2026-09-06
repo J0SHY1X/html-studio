@@ -6,7 +6,7 @@
 
 A local-first HTML source and visual editor for macOS and Windows, with Markdown, DOCX and PDF export.
 
-[下载 v0.3.9](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.9) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+[下载 v0.3.10](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.10) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
 
 ## 功能
 
@@ -14,7 +14,8 @@ A local-first HTML source and visual editor for macOS and Windows, with Markdown
 - 中文输入法组合输入保护，撤销/重做、普通粘贴和纯文本粘贴。
 - 在源码或可视化页面中查找、循环定位、区分大小写、替换当前或全部替换。
 - Word 式字体、字号、字形、文字颜色、背景颜色、段落、列表和表格工具。
-- 源码与页面右键菜单；复制页面格式、追加空白页和页码调整。
+- 源码与页面右键菜单；复制页面、追加空白页、从光标处拆页和页码调整。
+- 右侧预览始终显示可拖拽的纵向滚动条，并支持修改当前页面或光标所在表格的底色。
 - 保存 HTML，导出 Markdown、DOCX、分页 PDF，以及系统打印。
 - 本地自动草稿、修改日志、完整 HTML 快照和历史恢复。
 - Windows 启动时显示可关闭的使用说明标签页。

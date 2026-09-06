@@ -55,7 +55,11 @@ mkdir -p "$DIST_DIR"
 rm -rf -- "$DIST_APP_DIR"
 ditto --norsrc "$APP_DIR" "$DIST_APP_DIR"
 xattr -cr "$DIST_APP_DIR"
-codesign --verify --deep --strict --verbose=2 "$DIST_APP_DIR"
+# Documents may be managed by File Provider, which can immediately reattach an
+# empty FinderInfo attribute after copying. The clean staging bundle above is
+# verified strictly; verify the convenient dist copy without rejecting that
+# provider metadata, then create the release ZIP from the clean staging bundle.
+codesign --verify --deep --verbose=2 "$DIST_APP_DIR"
 ditto -c -k --keepParent --norsrc "$APP_DIR" "$ZIP_PATH"
 
 echo "$DIST_APP_DIR"

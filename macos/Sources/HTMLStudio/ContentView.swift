@@ -522,7 +522,7 @@ private struct DocumentEditorView: View {
                     .font(.caption)
                     .fontWeight(.medium)
                 Spacer()
-                Text(designEditing ? "右键支持剪贴板、颜色、段落与页面操作" : "页面脚本和链接可正常交互")
+                Text(designEditing ? "右键支持剪贴板、底色、段落、表格与页面操作" : "页面脚本和链接可正常交互")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

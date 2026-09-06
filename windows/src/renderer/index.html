@@ -88,7 +88,7 @@
       </section>
 
       <section class="sidebar-footer">
-        <span>Windows 版 · 0.3.9</span>
+        <span>Windows 版 · 0.3.10</span>
         <span>本地离线编辑</span>
       </section>
     </aside>
@@ -197,6 +197,13 @@
               <div class="toolbar-menu-panel">
                 <button data-page-action="duplicateCurrent">复制当前页到后面</button>
                 <button data-page-action="insertBlankAfter">在当前页后新增空白页</button>
+                <button data-page-action="splitCurrent">从光标处拆分为两页</button>
+                <hr>
+                <label class="menu-color-tool">
+                  页面底色
+                  <input id="page-background-color" type="color" value="#ffffff">
+                </label>
+                <button id="clear-page-background">清除页面底色</button>
               </div>
             </details>
 
@@ -206,6 +213,12 @@
                 <button data-table-insert="2,2">插入 2 × 2 表格</button>
                 <button data-table-insert="3,3">插入 3 × 3 表格</button>
                 <button data-table-insert="4,4">插入 4 × 4 表格</button>
+                <hr>
+                <label class="menu-color-tool">
+                  表格底色
+                  <input id="table-background-color" type="color" value="#ffffff">
+                </label>
+                <button id="clear-table-background">清除表格底色</button>
                 <hr>
                 <button data-table-action="addRowBefore">在上方添加行</button>
                 <button data-table-action="addRowAfter">在下方添加行</button>
@@ -286,6 +299,15 @@
     <hr data-context-scope="design">
     <button data-context-action="duplicateCurrent" data-context-scope="design">复制当前页到后面</button>
     <button data-context-action="insertBlankAfter" data-context-scope="design">在当前页后新增空白页</button>
+    <button data-context-action="splitCurrent" data-context-scope="design">从光标处拆分为两页</button>
+    <div class="context-color-row" data-context-scope="design">
+      <label>页面底色<input id="context-page-background-color" type="color" value="#ffffff"></label>
+      <label>表格底色<input id="context-table-background-color" type="color" value="#ffffff"></label>
+    </div>
+    <div class="context-menu-grid" data-context-scope="design">
+      <button data-context-action="clearPageBackground">清除页面底色</button>
+      <button data-context-action="clearTableBackground">清除表格底色</button>
+    </div>
   </div>
 
   <dialog id="history-dialog" class="history-dialog">

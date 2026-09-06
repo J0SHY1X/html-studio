@@ -145,7 +145,7 @@ window.HTMLStudioGuideHTML = `<!doctype html>
 <body>
   <main>
     <section class="hero">
-      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.9</p>
+      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.10</p>
       <h1>从源码到所见即所得，<br>在一个窗口完成。</h1>
       <p class="lead">HTML Studio 可打开、实时预览和编辑 HTML，并导出 Markdown、Word 与 PDF，或打开 Windows 系统打印对话框。右侧页面支持中文输入法和类似 Word 的格式工具。</p>
       <span class="close-tip">本说明是独立标签页，点击标签上的 × 即可关闭</span>
@@ -182,7 +182,7 @@ window.HTMLStudioGuideHTML = `<!doctype html>
       </article>
       <article class="card">
         <strong>右键与分页</strong>
-        <p>源码和页面均提供右键菜单。普通粘贴保留 HTML 格式，“粘贴为纯文本”会移除来源格式；页面菜单还可修改字形、文字/背景颜色、段落、列表，或复制和新增页面。</p>
+        <p>源码和页面均提供右键菜单。页面右侧滚动条可直接拖动；页面菜单支持复制、追加、从光标处拆页，并可修改页面或表格底色。</p>
       </article>
       <article class="card">
         <strong>修改历史</strong>

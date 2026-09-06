@@ -10,6 +10,8 @@ struct DesignToolbar: View {
     @State private var selectedBlock = "p"
     @State private var foregroundColor = Color.primary
     @State private var highlightColor = Color.yellow.opacity(0.45)
+    @State private var pageBackgroundColor = Color.white
+    @State private var tableBackgroundColor = Color.white
 
     private let fonts = [
         "PingFang SC",
@@ -188,12 +190,32 @@ struct DesignToolbar: View {
                         Button("在当前页后新增空白页") {
                             controller.pageAction(.insertBlankAfter)
                         }
+                        Button("从光标处拆分为两页") {
+                            controller.pageAction(.splitCurrent)
+                        }
+
+                        Divider()
+
+                        Button("清除页面底色") {
+                            controller.setPageBackgroundColor(nil)
+                        }
                     } label: {
                         Label("页面", systemImage: "doc.on.doc")
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .help("复制页面格式或新增页面")
+                    .help("复制、新增、拆分页面或清除页面底色")
+
+                    ColorPicker(
+                        "页底色",
+                        selection: $pageBackgroundColor,
+                        supportsOpacity: true
+                    )
+                    .fixedSize()
+                    .help("修改当前页面底色")
+                    .onChange(of: pageBackgroundColor) { color in
+                        controller.setPageBackgroundColor(color.hexString)
+                    }
 
                     Menu {
                         Button("插入 2 × 2 表格") {
@@ -204,6 +226,12 @@ struct DesignToolbar: View {
                         }
                         Button("插入 4 × 4 表格") {
                             controller.insertTable(rows: 4, columns: 4)
+                        }
+
+                        Divider()
+
+                        Button("清除表格底色") {
+                            controller.setTableBackgroundColor(nil)
                         }
 
                         Divider()
@@ -240,6 +268,17 @@ struct DesignToolbar: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
+
+                    ColorPicker(
+                        "表底色",
+                        selection: $tableBackgroundColor,
+                        supportsOpacity: true
+                    )
+                    .fixedSize()
+                    .help("修改光标所在表格的底色")
+                    .onChange(of: tableBackgroundColor) { color in
+                        controller.setTableBackgroundColor(color.hexString)
+                    }
 
                     Button {
                         controller.execute("insertHorizontalRule")

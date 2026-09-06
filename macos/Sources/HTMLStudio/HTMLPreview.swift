@@ -36,6 +36,9 @@ struct HTMLPreview: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
+        DispatchQueue.main.async {
+            Self.configureScrollers(in: webView)
+        }
         context.coordinator.webView = webView
         context.coordinator.isEditable = isEditable
         controller.attach(webView)
@@ -60,6 +63,16 @@ struct HTMLPreview: NSViewRepresentable {
         )
         webView.navigationDelegate = nil
         coordinator.controller.detach(webView)
+    }
+
+    private static func configureScrollers(in view: NSView) {
+        if let scrollView = view as? NSScrollView {
+            scrollView.hasVerticalScroller = true
+            scrollView.autohidesScrollers = false
+            scrollView.scrollerStyle = .legacy
+            return
+        }
+        view.subviews.forEach { configureScrollers(in: $0) }
     }
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
@@ -132,6 +145,7 @@ struct HTMLPreview: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            HTMLPreview.configureScrollers(in: webView)
             controller.setEditable(isEditable)
         }
 
@@ -227,6 +241,27 @@ struct HTMLPreview: NSViewRepresentable {
             blank.target = self
             menu.addItem(blank)
 
+            let split = NSMenuItem(
+                title: "从光标处拆分为两页",
+                action: #selector(splitCurrentPage),
+                keyEquivalent: ""
+            )
+            split.target = self
+            menu.addItem(split)
+
+            addColorMenu(
+                title: "页面底色",
+                command: "pageBackgroundColor",
+                includesTransparent: true,
+                to: menu
+            )
+            addColorMenu(
+                title: "表格底色",
+                command: "tableBackgroundColor",
+                includesTransparent: true,
+                to: menu
+            )
+
             let point = NSPoint(
                 x: x,
                 y: max(0, webView.bounds.height - y)
@@ -320,7 +355,7 @@ struct HTMLPreview: NSViewRepresentable {
                 let command = payload["command"]
             else { return }
             let value = payload["value"]
-            controller.execute(command, value: value?.isEmpty == false ? value : nil)
+            executeColorAwareCommand(command, value: value?.isEmpty == false ? value : nil)
         }
 
         @objc private func pastePlainText() {
@@ -338,7 +373,7 @@ struct HTMLPreview: NSViewRepresentable {
         @objc private func showCustomColorPanel(_ sender: NSMenuItem) {
             colorPanelCommand = sender.representedObject as? String ?? "foreColor"
             let panel = NSColorPanel.shared
-            panel.showsAlpha = colorPanelCommand == "hiliteColor"
+            panel.showsAlpha = colorPanelCommand != "foreColor"
             panel.setTarget(self)
             panel.setAction(#selector(applyCustomColor(_:)))
             panel.orderFront(nil)
@@ -353,7 +388,17 @@ struct HTMLPreview: NSViewRepresentable {
             let value = alpha < 255
                 ? String(format: "#%02X%02X%02X%02X", red, green, blue, alpha)
                 : String(format: "#%02X%02X%02X", red, green, blue)
-            controller.execute(colorPanelCommand, value: value)
+            executeColorAwareCommand(colorPanelCommand, value: value)
+        }
+
+        private func executeColorAwareCommand(_ command: String, value: String?) {
+            if command == "pageBackgroundColor" {
+                controller.setPageBackgroundColor(value)
+            } else if command == "tableBackgroundColor" {
+                controller.setTableBackgroundColor(value)
+            } else {
+                controller.execute(command, value: value)
+            }
         }
 
         @objc private func duplicateCurrentPage() {
@@ -362,6 +407,10 @@ struct HTMLPreview: NSViewRepresentable {
 
         @objc private func insertBlankPage() {
             controller.pageAction(.insertBlankAfter)
+        }
+
+        @objc private func splitCurrentPage() {
+            controller.pageAction(.splitCurrent)
         }
     }
 
@@ -544,6 +593,27 @@ struct HTMLPreview: NSViewRepresentable {
           const style = document.createElement('style');
           style.dataset.htmlStudioUi = 'editing-style';
           style.textContent = `
+            html {
+              overflow-y: scroll !important;
+              scrollbar-gutter: stable;
+            }
+            html::-webkit-scrollbar {
+              width: 14px;
+            }
+            html::-webkit-scrollbar-track {
+              background: #e5e7eb;
+            }
+            html::-webkit-scrollbar-thumb {
+              min-height: 42px;
+              border: 3px solid transparent;
+              border-radius: 9px;
+              background: #7b8797;
+              background-clip: padding-box;
+            }
+            html::-webkit-scrollbar-thumb:hover {
+              background: #526071;
+              background-clip: padding-box;
+            }
             body[data-html-studio-editing="true"] {
               min-height: 100vh !important;
               cursor: text;
@@ -785,6 +855,45 @@ struct HTMLPreview: NSViewRepresentable {
           return true;
         },
 
+        setTableBackgroundColor(value) {
+          if (!this.prepareCommand()) return false;
+          const cell = this.currentCell();
+          const table = cell?.closest('table');
+          if (!table) {
+            post({ type: 'status', value: '请先把光标放入要修改底色的表格' });
+            return false;
+          }
+          const color = String(value || '').trim();
+          [table, ...table.querySelectorAll('th,td')].forEach((node) => {
+            this.setTrackedBackground(
+              node,
+              color,
+              'data-html-studio-table-background-before'
+            );
+          });
+          this.finishCommand(color && color !== 'transparent' ? '修改表格底色' : '清除表格底色');
+          return true;
+        },
+
+        setTrackedBackground(element, value, marker) {
+          const color = String(value || '').trim();
+          if (color && color !== 'transparent') {
+            if (!element.hasAttribute(marker)) {
+              element.setAttribute(marker, element.style.getPropertyValue('background-color'));
+            }
+            element.style.setProperty('background-color', color);
+            return;
+          }
+          if (element.hasAttribute(marker)) {
+            const previous = element.getAttribute(marker) || '';
+            if (previous) element.style.setProperty('background-color', previous);
+            else element.style.removeProperty('background-color');
+            element.removeAttribute(marker);
+          } else {
+            element.style.removeProperty('background-color');
+          }
+        },
+
         pageElements() {
           return Array.from(document.querySelectorAll(this.pageSelector)).filter((page) => {
             const parentPage = page.parentElement?.closest?.(this.pageSelector);
@@ -941,9 +1050,98 @@ struct HTMLPreview: NSViewRepresentable {
           return true;
         },
 
+        setPageBackgroundColor(value) {
+          if (!this.prepareCommand()) return false;
+          const page = this.currentPage();
+          if (!page) {
+            post({ type: 'status', value: '未找到要修改底色的页面' });
+            return false;
+          }
+          const color = String(value || '').trim();
+          this.setTrackedBackground(
+            page,
+            color,
+            'data-html-studio-page-background-before'
+          );
+          this.finishCommand(color && color !== 'transparent' ? '修改页面底色' : '清除页面底色');
+          return true;
+        },
+
+        ensureEditablePlaceholder(root) {
+          if (!root) return;
+          const hasText = !!root.textContent?.trim();
+          const hasContent = !!root.querySelector?.('img,video,audio,canvas,svg,table,ul,ol,hr');
+          if (hasText || hasContent) return;
+          const paragraph = document.createElement('p');
+          paragraph.innerHTML = '<br>';
+          root.appendChild(paragraph);
+        },
+
+        splitCurrentPage() {
+          if (!this.prepareCommand()) return false;
+          const page = this.currentPage();
+          const selection = window.getSelection();
+          const sourceRange = selection?.rangeCount ? selection.getRangeAt(0) : this.savedRange;
+          if (!page || !sourceRange || !page.contains(sourceRange.startContainer)) {
+            post({ type: 'status', value: '请先把光标放到要拆分的位置' });
+            return false;
+          }
+
+          const splitRange = sourceRange.cloneRange();
+          splitRange.collapse(true);
+          splitRange.setEnd(page, page.childNodes.length);
+          const fragment = splitRange.extractContents();
+          const continuation = page.cloneNode(false);
+          continuation.removeAttribute('data-html-studio-active-page');
+
+          const headerSelector = ':scope > .slide-head, :scope > .page-head, :scope > .page-header, :scope > header';
+          const pageHeader = page.querySelector(headerSelector);
+          const fragmentHasHeader = Array.from(fragment.children || []).some((node) => {
+            return node.matches?.('.slide-head, .page-head, .page-header, header');
+          });
+          if (pageHeader && !fragmentHasHeader) {
+            continuation.appendChild(pageHeader.cloneNode(true));
+          }
+          continuation.appendChild(fragment);
+          this.sanitizeClonedIDs(continuation);
+
+          const contentSelector = '.script, .page-content, .slide-content, .content, main, article';
+          let startElement = sourceRange.startContainer;
+          if (startElement?.nodeType === Node.TEXT_NODE) startElement = startElement.parentElement;
+          const originalContent = startElement?.closest?.(contentSelector);
+          if (originalContent && page.contains(originalContent)) {
+            this.ensureEditablePlaceholder(originalContent);
+          } else {
+            this.ensureEditablePlaceholder(page);
+          }
+          const continuationContent = continuation.querySelector(contentSelector) || continuation;
+          this.ensureEditablePlaceholder(continuationContent);
+
+          page.after(continuation);
+          const pages = this.renumberPages();
+          const oldNumber = pages.indexOf(page) + 1;
+          const newNumber = pages.indexOf(continuation) + 1;
+          this.markActivePage(continuation);
+          continuation.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+          const caretTarget = continuation.querySelector(
+            '.script, .page-content, .slide-content, .content, main, article, h1, h2, h3, p, li, td, th'
+          ) || continuation;
+          const caretRange = document.createRange();
+          caretRange.selectNodeContents(caretTarget);
+          caretRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(caretRange);
+          this.savedRange = caretRange.cloneRange();
+          this.notifyChange(`从第 ${oldNumber} 页拆分并新增第 ${newNumber} 页`, true);
+          post({ type: 'status', value: `已从光标处拆分为第 ${oldNumber}、${newNumber} 页` });
+          return true;
+        },
+
         pageAction(action) {
           if (action === 'duplicateCurrent') return this.duplicateCurrentPage();
           if (action === 'insertBlankAfter') return this.insertBlankPage();
+          if (action === 'splitCurrent') return this.splitCurrentPage();
           return false;
         },
 

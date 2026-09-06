@@ -39,7 +39,7 @@ final class EditorDocument: ObservableObject, Identifiable {
           <li>在标签页中同时打开多个 HTML 文件</li>
           <li>像 Word 一样修改字体、段落和表格</li>
           <li>右键使用剪贴板、纯文本粘贴、文字颜色和背景颜色</li>
-          <li>复制当前页面，并在其后增加新页面</li>
+          <li>复制、追加页面，或从光标处把当前页拆成两页</li>
           <li>查看修改日志并恢复历史版本</li>
         </ul>
       </div>

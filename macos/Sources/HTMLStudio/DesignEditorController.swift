@@ -74,8 +74,16 @@ final class DesignEditorController: ObservableObject {
         invoke("tableAction", arguments: [action.rawValue])
     }
 
+    func setTableBackgroundColor(_ value: String?) {
+        invoke("setTableBackgroundColor", arguments: [value ?? "transparent"])
+    }
+
     func pageAction(_ action: PageEditAction) {
         invoke("pageAction", arguments: [action.rawValue])
+    }
+
+    func setPageBackgroundColor(_ value: String?) {
+        invoke("setPageBackgroundColor", arguments: [value ?? "transparent"])
     }
 
     func find(
@@ -182,4 +190,5 @@ enum TableEditAction: String {
 enum PageEditAction: String {
     case duplicateCurrent
     case insertBlankAfter
+    case splitCurrent
 }

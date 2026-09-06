@@ -30,7 +30,7 @@ for (const relativePath of requiredFiles) {
 const packageJSON = JSON.parse(
   fs.readFileSync(path.join(root, "package.json"), "utf8")
 );
-assert.equal(packageJSON.version, "0.3.9");
+assert.equal(packageJSON.version, "0.3.10");
 assert.equal(packageJSON.build.win.target[0].target, "nsis");
 assert.match(packageJSON.build.nsis.artifactName, /Setup/);
 assert.match(packageJSON.build.portable.artifactName, /Portable/);
@@ -56,6 +56,9 @@ assert.match(rendererHTML, /sandbox="allow-same-origin"/);
 assert.match(rendererHTML, /data-table-action="addRowAfter"/);
 assert.match(rendererHTML, /id="document-tab-list"/);
 assert.match(rendererHTML, /data-page-action="duplicateCurrent"/);
+assert.match(rendererHTML, /data-page-action="splitCurrent"/);
+assert.match(rendererHTML, /id="page-background-color"/);
+assert.match(rendererHTML, /id="table-background-color"/);
 assert.match(rendererHTML, /data-context-action="paste"/);
 assert.match(rendererHTML, /data-context-action="pastePlainText"/);
 assert.match(rendererHTML, /id="context-foreground-color"/);
@@ -82,6 +85,10 @@ assert.match(rendererJS, /background: #ffffff/);
 assert.match(rendererJS, /function isRangeValid/);
 assert.match(rendererJS, /function duplicateCurrentPage/);
 assert.match(rendererJS, /function insertBlankPage/);
+assert.match(rendererJS, /function splitCurrentPage/);
+assert.match(rendererJS, /function setPageBackgroundColor/);
+assert.match(rendererJS, /function setTableBackgroundColor/);
+assert.match(rendererJS, /overflow-y: scroll !important/);
 assert.match(rendererJS, /function captureDesignHTML/);
 assert.match(rendererJS, /window\.htmlStudioAPI\.appendHistory/);
 assert.match(rendererJS, /workspaceState\.documents/);

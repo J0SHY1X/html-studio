@@ -31,7 +31,7 @@ const starterHTML = `<!doctype html>
     <ul>
       <li>在标签页中同时打开多个 HTML 文件</li>
       <li>像 Word 一样修改字体、段落和表格</li>
-      <li>复制当前页面，并在其后增加新页面</li>
+      <li>复制、追加页面，或从光标处把当前页拆成两页</li>
       <li>查看修改日志并恢复历史版本</li>
       <li>导出 Markdown、Word 或 PDF 文档</li>
     </ul>
@@ -99,6 +99,8 @@ const elements = {
   toast: document.querySelector("#toast"),
   tableMenu: document.querySelector("#table-menu"),
   pageMenu: document.querySelector("#page-menu"),
+  tableBackgroundColor: document.querySelector("#table-background-color"),
+  pageBackgroundColor: document.querySelector("#page-background-color"),
   tabList: document.querySelector("#document-tab-list"),
   addTabButton: document.querySelector("#add-tab-button"),
   contextMenu: document.querySelector("#context-menu"),
@@ -480,6 +482,23 @@ function injectEditorSupport(html) {
   const style = documentValue.createElement("style");
   style.dataset.htmlStudioUi = "editing-style";
   style.textContent = `
+    html {
+      overflow-y: scroll !important;
+      scrollbar-gutter: stable;
+    }
+    html::-webkit-scrollbar { width: 14px; }
+    html::-webkit-scrollbar-track { background: #e5e7eb; }
+    html::-webkit-scrollbar-thumb {
+      min-height: 42px;
+      border: 3px solid transparent;
+      border-radius: 9px;
+      background: #7b8797;
+      background-clip: padding-box;
+    }
+    html::-webkit-scrollbar-thumb:hover {
+      background: #526071;
+      background-clip: padding-box;
+    }
     body[data-html-studio-editing="true"] { min-height: 100vh !important; cursor: text; }
     body[data-html-studio-editing="true"]:focus { outline: none; }
     body[data-html-studio-editing="true"] *:hover { outline: 1px dashed rgba(59,130,246,.3); outline-offset: 2px; }
@@ -539,7 +558,7 @@ function setDesignEditable() {
   elements.designStatus.textContent = isGuide()
     ? "使用说明（只读）"
     : (editable
-      ? "可直接编辑；右键支持剪贴板、文字颜色、段落和页面操作"
+      ? "可直接编辑；右键支持剪贴板、底色、段落、表格和页面操作"
       : "只读预览（页面脚本为安全起见保持禁用）");
   if (editable && changed && !state.isComposing) repairSelection();
 }
@@ -935,6 +954,42 @@ function tableAction(action) {
   scheduleDesignCapture(names[action] || "修改表格");
 }
 
+function setTableBackgroundColor(value) {
+  const frameDocument = prepareCommand();
+  if (!frameDocument) return;
+  const cell = currentTableCell();
+  const table = cell?.closest("table");
+  if (!table) {
+    showToast("请先把光标放入要修改底色的表格。");
+    return;
+  }
+  const color = String(value || "").trim();
+  [table, ...table.querySelectorAll("th,td")].forEach((node) => {
+    setTrackedBackground(node, color, "data-html-studio-table-background-before");
+  });
+  repairSelection();
+  captureDesignHTML(color && color !== "transparent" ? "修改表格底色" : "清除表格底色");
+}
+
+function setTrackedBackground(element, value, marker) {
+  const color = String(value || "").trim();
+  if (color && color !== "transparent") {
+    if (!element.hasAttribute(marker)) {
+      element.setAttribute(marker, element.style.getPropertyValue("background-color"));
+    }
+    element.style.setProperty("background-color", color);
+    return;
+  }
+  if (element.hasAttribute(marker)) {
+    const previous = element.getAttribute(marker) || "";
+    if (previous) element.style.setProperty("background-color", previous);
+    else element.style.removeProperty("background-color");
+    element.removeAttribute(marker);
+  } else {
+    element.style.removeProperty("background-color");
+  }
+}
+
 function pageElements() {
   const frameDocument = designDocument();
   if (!frameDocument) return [];
@@ -1086,9 +1141,90 @@ function insertBlankPage() {
   showToast(`已新增第 ${number} 页。`);
 }
 
+function setPageBackgroundColor(value) {
+  const frameDocument = prepareCommand();
+  if (!frameDocument) return;
+  const page = currentPage();
+  if (!page) {
+    showToast("未找到要修改底色的页面。");
+    return;
+  }
+  const color = String(value || "").trim();
+  setTrackedBackground(page, color, "data-html-studio-page-background-before");
+  repairSelection();
+  captureDesignHTML(color && color !== "transparent" ? "修改页面底色" : "清除页面底色");
+}
+
+function ensureEditablePlaceholder(root) {
+  if (!root) return;
+  const hasText = Boolean(root.textContent?.trim());
+  const hasContent = Boolean(root.querySelector?.("img,video,audio,canvas,svg,table,ul,ol,hr"));
+  if (hasText || hasContent) return;
+  const paragraph = designDocument().createElement("p");
+  paragraph.innerHTML = "<br>";
+  root.appendChild(paragraph);
+}
+
+function splitCurrentPage() {
+  const frameDocument = prepareCommand();
+  if (!frameDocument) return;
+  const page = currentPage();
+  const selection = designWindow()?.getSelection();
+  const sourceRange = selection?.rangeCount ? selection.getRangeAt(0) : state.savedRange;
+  if (!page || !sourceRange || !page.contains(sourceRange.startContainer)) {
+    showToast("请先把光标放到要拆分的位置。");
+    return;
+  }
+
+  const splitRange = sourceRange.cloneRange();
+  splitRange.collapse(true);
+  splitRange.setEnd(page, page.childNodes.length);
+  const fragment = splitRange.extractContents();
+  const continuation = page.cloneNode(false);
+  continuation.removeAttribute("data-html-studio-active-page");
+
+  const headerSelector = ":scope > .slide-head, :scope > .page-head, :scope > .page-header, :scope > header";
+  const pageHeader = page.querySelector(headerSelector);
+  const fragmentHasHeader = Array.from(fragment.children || []).some((node) => (
+    node.matches?.(".slide-head, .page-head, .page-header, header")
+  ));
+  if (pageHeader && !fragmentHasHeader) continuation.appendChild(pageHeader.cloneNode(true));
+  continuation.appendChild(fragment);
+  sanitizeClonedIDs(continuation);
+
+  const contentSelector = ".script, .page-content, .slide-content, .content, main, article";
+  let startElement = sourceRange.startContainer;
+  if (startElement?.nodeType === 3) startElement = startElement.parentElement;
+  const originalContent = startElement?.closest?.(contentSelector);
+  if (originalContent && page.contains(originalContent)) ensureEditablePlaceholder(originalContent);
+  else ensureEditablePlaceholder(page);
+  const continuationContent = continuation.querySelector(contentSelector) || continuation;
+  ensureEditablePlaceholder(continuationContent);
+
+  page.after(continuation);
+  const pages = renumberPages();
+  const oldNumber = pages.indexOf(page) + 1;
+  const newNumber = pages.indexOf(continuation) + 1;
+  markActivePage(continuation);
+  continuation.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  const caretTarget = continuation.querySelector(
+    ".script, .page-content, .slide-content, .content, main, article, h1, h2, h3, p, li, td, th"
+  ) || continuation;
+  const caretRange = frameDocument.createRange();
+  caretRange.selectNodeContents(caretTarget);
+  caretRange.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(caretRange);
+  state.savedRange = caretRange.cloneRange();
+  captureDesignHTML(`从第 ${oldNumber} 页拆分并新增第 ${newNumber} 页`);
+  showToast(`已从光标处拆分为第 ${oldNumber}、${newNumber} 页。`);
+}
+
 function pageAction(action) {
   if (action === "duplicateCurrent") duplicateCurrentPage();
   else if (action === "insertBlankAfter") insertBlankPage();
+  else if (action === "splitCurrent") splitCurrentPage();
 }
 
 function showContextMenu(x, y, target = "design") {
@@ -1207,8 +1343,16 @@ async function contextAction(action) {
     await sourceContextAction(action);
     return;
   }
-  if (["duplicateCurrent", "insertBlankAfter"].includes(action)) {
+  if (["duplicateCurrent", "insertBlankAfter", "splitCurrent"].includes(action)) {
     pageAction(action);
+    return;
+  }
+  if (action === "clearPageBackground") {
+    setPageBackgroundColor("transparent");
+    return;
+  }
+  if (action === "clearTableBackground") {
+    setTableBackgroundColor("transparent");
     return;
   }
   const selection = designWindow()?.getSelection();
@@ -2137,11 +2281,27 @@ document.querySelectorAll("[data-table-action]").forEach((button) => {
     elements.tableMenu.open = false;
   });
 });
+elements.tableBackgroundColor.addEventListener("change", (event) => {
+  setTableBackgroundColor(event.target.value);
+  elements.tableMenu.open = false;
+});
+document.querySelector("#clear-table-background").addEventListener("click", () => {
+  setTableBackgroundColor("transparent");
+  elements.tableMenu.open = false;
+});
 document.querySelectorAll("[data-page-action]").forEach((button) => {
   button.addEventListener("click", () => {
     pageAction(button.dataset.pageAction);
     elements.pageMenu.open = false;
   });
+});
+elements.pageBackgroundColor.addEventListener("change", (event) => {
+  setPageBackgroundColor(event.target.value);
+  elements.pageMenu.open = false;
+});
+document.querySelector("#clear-page-background").addEventListener("click", () => {
+  setPageBackgroundColor("transparent");
+  elements.pageMenu.open = false;
 });
 document.querySelectorAll("[data-context-action]").forEach((button) => {
   button.addEventListener("mousedown", (event) => event.preventDefault());
@@ -2164,6 +2324,16 @@ document.querySelector("#context-highlight-color").addEventListener("change", (e
   hideContextMenu();
   activateEditorSurface("design");
   executeCommand("hiliteColor", event.target.value);
+});
+document.querySelector("#context-page-background-color").addEventListener("change", (event) => {
+  hideContextMenu();
+  activateEditorSurface("design");
+  setPageBackgroundColor(event.target.value);
+});
+document.querySelector("#context-table-background-color").addEventListener("change", (event) => {
+  hideContextMenu();
+  activateEditorSurface("design");
+  setTableBackgroundColor(event.target.value);
 });
 
 elements.editToggle.addEventListener("change", () => {

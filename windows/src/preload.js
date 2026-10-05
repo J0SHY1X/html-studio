@@ -2,6 +2,13 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("htmlStudioAPI", {
   openFile: () => ipcRenderer.invoke("file:open"),
+  startupFiles: () => ipcRenderer.invoke("file:startup"),
+  confirmMarkdownImport: (name) => ipcRenderer.invoke("file:confirmMarkdownImport", name),
+  onOpenFiles: (callback) => {
+    const handler = (_event, files) => callback(files);
+    ipcRenderer.on("open-files", handler);
+    return () => ipcRenderer.removeListener("open-files", handler);
+  },
   saveHTML: (request) => ipcRenderer.invoke("file:saveHTML", request),
   exportText: (request) => ipcRenderer.invoke("file:exportText", request),
   exportDOCX: (request) => ipcRenderer.invoke("file:exportDOCX", request),

@@ -2,6 +2,16 @@
 
 HTML Studio 是一个使用 Swift、SwiftUI、AppKit 与 WebKit 构建的原生 macOS HTML 工作台。它面向需要快速查看、编辑、实时预览、保存和转换 HTML 文件的用户。
 
+## 0.3.11 更新
+
+- 编辑区填满窗口，状态栏固定在底部；完整目录可滚动，点击目录可跳转到对应标题。
+- 新建 HTML 使用空白正文；从 Finder“打开方式”启动时只加载指定文件，旧草稿仍保留。
+- 缓存启动早期收到的文件打开请求，避免请求丢失；保留用户已经编辑的标签页。
+- 页面右键菜单按视图坐标系定位；Esc 可退出全屏。
+- 内置转换器支持 Markdown 表格，Pandoc 转换也应用表格样式；导入后可选择立即另存为 HTML 或稍后保存，并保留原文件名。
+
+回归测试使用 Swift 6 的 Swift Testing：`zsh scripts/test_regressions.sh`。测试涵盖原生窗口布局、31 个标题跳转、文件打开和草稿恢复、新建空白页、菜单坐标与 Markdown 表格保存。
+
 ## 0.3.10 更新
 
 - 右侧预览窗口始终显示纵向滚动条，可用鼠标拖动滑块快速上下移动。
@@ -100,7 +110,7 @@ chmod +x scripts/build_app.sh
 
 ```text
 dist/HTML Studio.app
-dist/HTML Studio-macOS-arm64-0.3.10.zip
+dist/HTML Studio-macOS-arm64-0.3.11.zip
 ```
 
 也可以直接开发运行：

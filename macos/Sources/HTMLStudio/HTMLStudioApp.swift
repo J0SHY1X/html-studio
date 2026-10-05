@@ -4,7 +4,6 @@ import SwiftUI
 extension Notification.Name {
     static let htmlStudioNewDocument = Notification.Name("HTMLStudio.newDocument")
     static let htmlStudioOpenDocument = Notification.Name("HTMLStudio.openDocument")
-    static let htmlStudioOpenExternalFiles = Notification.Name("HTMLStudio.openExternalFiles")
     static let htmlStudioSaveDocument = Notification.Name("HTMLStudio.saveDocument")
     static let htmlStudioSaveDocumentAs = Notification.Name("HTMLStudio.saveDocumentAs")
     static let htmlStudioExportMarkdown = Notification.Name("HTMLStudio.exportMarkdown")
@@ -21,13 +20,44 @@ extension Notification.Name {
     static let htmlStudioFindPrevious = Notification.Name("HTMLStudio.findPrevious")
 }
 
+@MainActor
+final class FileOpenRequests: ObservableObject {
+    static let shared = FileOpenRequests()
+    @Published var pendingURLs: [URL] = []
+    @Published var didFinishLaunching = false
+    private(set) var launchedWithFiles = false
+
+    func enqueue(_ urls: [URL]) {
+        launchedWithFiles = true
+        pendingURLs.append(contentsOf: urls)
+    }
+}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var escapeMonitor: Any?
+
     func application(_ application: NSApplication, open urls: [URL]) {
-        NotificationCenter.default.post(
-            name: .htmlStudioOpenExternalFiles,
-            object: nil,
-            userInfo: ["urls": urls]
-        )
+        // Finder can deliver this before the SwiftUI view subscribes.
+        FileOpenRequests.shared.enqueue(urls)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53, let window = event.window ?? NSApp.keyWindow,
+               window.styleMask.contains(.fullScreen) {
+                window.toggleFullScreen(nil)
+                return nil
+            }
+            return event
+        }
+        DispatchQueue.main.async {
+            FileOpenRequests.shared.didFinishLaunching = true
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -43,6 +73,7 @@ struct HTMLStudioApp: App {
         WindowGroup {
             ContentView()
                 .frame(minWidth: 900, minHeight: 600)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)

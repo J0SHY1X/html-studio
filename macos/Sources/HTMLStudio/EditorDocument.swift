@@ -20,29 +20,9 @@ final class EditorDocument: ObservableObject, Identifiable {
           background: #ffffff;
           font: 17px/1.7 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
         }
-        h1 { letter-spacing: -0.025em; }
-        .card {
-          margin-top: 32px;
-          padding: 24px;
-          border: 1px solid #d9dee7;
-          border-radius: 16px;
-          background: #f5f7fb;
-        }
       </style>
     </head>
     <body>
-      <h1>欢迎使用 HTML Studio</h1>
-      <p>可以在左侧编辑 HTML，也可以直接点击右侧页面进行可视化编辑。</p>
-      <div class="card">
-        <strong>可以从这里开始：</strong>
-        <ul>
-          <li>在标签页中同时打开多个 HTML 文件</li>
-          <li>像 Word 一样修改字体、段落和表格</li>
-          <li>右键使用剪贴板、纯文本粘贴、文字颜色和背景颜色</li>
-          <li>复制、追加页面，或从光标处把当前页拆成两页</li>
-          <li>查看修改日志并恢复历史版本</li>
-        </ul>
-      </div>
     </body>
     </html>
     """
@@ -52,6 +32,7 @@ final class EditorDocument: ObservableObject, Identifiable {
 
     @Published var html: String
     @Published private(set) var fileURL: URL?
+    @Published private(set) var importedSourceURL: URL?
     @Published private(set) var isDirty = false
     @Published var errorMessage: String?
     @Published private(set) var lastSavedAt: Date?
@@ -85,6 +66,7 @@ final class EditorDocument: ObservableObject, Identifiable {
            !draft.html.isEmpty {
             html = draft.html
             fileURL = draft.filePath.map(URL.init(fileURLWithPath:))
+            importedSourceURL = draft.importedSourcePath.map(URL.init(fileURLWithPath:))
             isDirty = draft.isDirty
             savedHTML = draft.isDirty ? "" : draft.html
             draftIdentifier = draft.identifier ?? identifier
@@ -110,11 +92,12 @@ final class EditorDocument: ObservableObject, Identifiable {
     }
 
     var displayName: String {
-        fileURL?.lastPathComponent ?? "未命名.html"
+        fileURL?.lastPathComponent ?? importedSourceURL?
+            .deletingPathExtension().appendingPathExtension("html").lastPathComponent ?? "未命名.html"
     }
 
     var baseURL: URL? {
-        fileURL?.deletingLastPathComponent()
+        (fileURL ?? importedSourceURL)?.deletingLastPathComponent()
     }
 
     var lineCount: Int {
@@ -184,6 +167,7 @@ final class EditorDocument: ObservableObject, Identifiable {
 
         let isHTMLFile = ext == "html" || ext == "htm"
         fileURL = isHTMLFile ? url : nil
+        importedSourceURL = isHTMLFile ? nil : url
         savedHTML = isHTMLFile ? html : ""
         isDirty = !isHTMLFile
         lastSavedAt = nil
@@ -213,6 +197,7 @@ final class EditorDocument: ObservableObject, Identifiable {
         let previousKey = historyKey
         try writeHTML(to: url)
         fileURL = url
+        importedSourceURL = nil
         historyKey = historyStore.key(for: url, fallback: draftIdentifier)
         changeLogEntries = historyStore.migrate(from: previousKey, to: historyKey)
         addRecentFile(url)
@@ -263,6 +248,7 @@ final class EditorDocument: ObservableObject, Identifiable {
         draftWorkItem?.cancel()
         let snapshot = html
         let path = fileURL?.path
+        let importedPath = importedSourceURL?.path
         let dirty = isDirty
         let identifier = draftIdentifier
         let workItem = DispatchWorkItem { [draftStore] in
@@ -270,7 +256,8 @@ final class EditorDocument: ObservableObject, Identifiable {
                 identifier: identifier,
                 html: snapshot,
                 filePath: path,
-                isDirty: dirty
+                isDirty: dirty,
+                importedSourcePath: importedPath
             )
         }
         draftWorkItem = workItem
@@ -320,7 +307,8 @@ final class EditorDocument: ObservableObject, Identifiable {
             identifier: draftIdentifier,
             html: html,
             filePath: fileURL?.path,
-            isDirty: isDirty
+            isDirty: isDirty,
+            importedSourcePath: importedSourceURL?.path
         )
     }
 

@@ -24,6 +24,11 @@ let package = Package(
             name: "HTMLStudioSmokeTests",
             dependencies: ["HTMLStudioCore"],
             path: "Tests/HTMLStudioSmokeTests"
+        ),
+        .testTarget(
+            name: "HTMLStudioRegressionTests",
+            dependencies: ["HTMLStudio", "HTMLStudioCore"],
+            path: "Tests/HTMLStudioRegressionTests"
         )
     ],
     swiftLanguageVersions: [.v5]

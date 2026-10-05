@@ -4,11 +4,32 @@ import Foundation
 final class DocumentWorkspace: ObservableObject {
     @Published private(set) var documents: [EditorDocument]
     @Published var selectedDocumentID: UUID
+    private var startupDocumentID: UUID?
+    private var startupHTML: String
+    private var startupResolved = false
+    private let draftStore: DraftStore
+    private let historyStore: ChangeLogStore
 
-    init() {
-        let initialDocument = EditorDocument(restoreDraft: true)
+    init(draftStore: DraftStore = .shared, historyStore: ChangeLogStore = .shared) {
+        self.draftStore = draftStore
+        self.historyStore = historyStore
+        let initialDocument = EditorDocument(draftStore: draftStore, historyStore: historyStore)
         documents = [initialDocument]
         selectedDocumentID = initialDocument.id
+        startupDocumentID = initialDocument.id
+        startupHTML = initialDocument.html
+    }
+
+    func restoreStartupDraft() {
+        guard !startupResolved else { return }
+        startupResolved = true
+        guard documents.count == 1, activeDocument.id == startupDocumentID,
+              activeDocument.html == startupHTML else { return }
+        let restored = EditorDocument(draftStore: draftStore, historyStore: historyStore, restoreDraft: true)
+        documents = [restored]
+        selectedDocumentID = restored.id
+        startupDocumentID = restored.id
+        startupHTML = restored.html
     }
 
     var activeDocument: EditorDocument {
@@ -17,23 +38,33 @@ final class DocumentWorkspace: ObservableObject {
 
     @discardableResult
     func newDocument() -> EditorDocument {
-        let document = EditorDocument()
+        startupDocumentID = nil
+        startupResolved = true
+        let document = EditorDocument(draftStore: draftStore, historyStore: historyStore)
         documents.append(document)
         selectedDocumentID = document.id
         return document
     }
 
     @discardableResult
-    func open(_ url: URL) throws -> EditorDocument {
+    func open(_ url: URL, fromExternalRequest: Bool = false) throws -> EditorDocument {
+        let replaceStartup = documents.count == 1 && documents[0].id == startupDocumentID &&
+            documents[0].html == startupHTML && (fromExternalRequest || !documents[0].isDirty)
         if let existing = documents.first(where: {
-            $0.fileURL?.standardizedFileURL == url.standardizedFileURL
-        }) {
+            ($0.fileURL ?? $0.importedSourceURL)?.standardizedFileURL == url.standardizedFileURL
+        }), !replaceStartup {
             selectedDocumentID = existing.id
             return existing
         }
 
-        let document = EditorDocument()
+        let document = EditorDocument(draftStore: draftStore, historyStore: historyStore)
         try document.open(url)
+        // Drop only the untouched startup placeholder/restored tab. Its draft stays on disk.
+        if replaceStartup {
+            documents.removeAll()
+        }
+        startupDocumentID = nil
+        startupResolved = true
         documents.append(document)
         selectedDocumentID = document.id
         return document
@@ -52,7 +83,7 @@ final class DocumentWorkspace: ObservableObject {
         documents.remove(at: index)
 
         if documents.isEmpty {
-            let replacement = EditorDocument()
+            let replacement = EditorDocument(draftStore: draftStore, historyStore: historyStore)
             documents = [replacement]
             selectedDocumentID = replacement.id
         } else if wasSelected {

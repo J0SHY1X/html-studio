@@ -57,7 +57,7 @@ public enum OutlineParser {
             let title = rawTitle
                 .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return title.isEmpty ? nil : OutlineItem(level: level, title: title)
+            return OutlineItem(level: level, title: title.isEmpty ? "未命名标题" : title)
         }
     }
 }

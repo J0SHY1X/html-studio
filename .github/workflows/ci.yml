@@ -23,6 +23,19 @@ jobs:
         run: swift build -c release
       - name: Core smoke tests
         run: swift run HTMLStudioSmokeTests
+      - name: Document and native window regressions
+        run: zsh scripts/test_regressions.sh
+      - name: Package macOS application
+        run: |
+          test "$(uname -m)" = arm64
+          zsh scripts/build_app.sh
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)
+          cp "dist/HTML Studio-macOS-arm64-$version.zip" "dist/HTML-Studio-macOS-arm64-$version.zip"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-release
+          path: macos/dist/HTML-Studio-macOS-arm64-*.zip
+          if-no-files-found: error
 
   windows:
     name: Windows Electron
@@ -40,8 +53,70 @@ jobs:
           cache-dependency-path: windows/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm test
+      - name: Browser workspace regressions
+        run: |
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:ui
       - name: Verify portable build
         run: |
           npm run pack:win
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run portable:folder
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          Compress-Archive -LiteralPath "dist/HTML Studio-$version-x64-Portable" -DestinationPath "dist/HTML-Studio-$version-x64-Portable.zip"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-release
+          path: windows/dist/HTML-Studio-*-x64-Portable.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish tested release
+    needs: [macos, windows]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: html-studio-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: '*-release'
+          merge-multiple: true
+          path: release
+      - name: Verify versions and publish ZIPs with checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(python3 - <<'PY'
+          import json, plistlib
+          windows = json.load(open('windows/package.json'))['version']
+          macos = plistlib.load(open('macos/Resources/Info.plist', 'rb'))['CFBundleShortVersionString']
+          assert windows == macos, 'Windows and macOS versions differ'
+          print(windows)
+          PY
+          )
+          tag="v$version"
+          macos_zip="HTML-Studio-macOS-arm64-$version.zip"
+          windows_zip="HTML-Studio-$version-x64-Portable.zip"
+          test -s "release/$macos_zip"
+          test -s "release/$windows_zip"
+          (cd release && sha256sum "$macos_zip" "$windows_zip" > "HTML-Studio-$version-SHA256SUMS.txt")
+          if gh release view "$tag" --json isDraft --jq '.isDraft' > /tmp/html-studio-release-state; then
+            if [ "$(cat /tmp/html-studio-release-state)" = false ]; then
+              echo "Release $tag is already published."
+              exit 0
+            fi
+            gh release upload "$tag" release/* --clobber
+          else
+            gh release create "$tag" release/* --draft --target "$GITHUB_SHA" \
+              --title "HTML Studio $tag" --notes-file ".github/release-notes/$tag.md"
+          fi
+          gh release edit "$tag" --draft=false --latest

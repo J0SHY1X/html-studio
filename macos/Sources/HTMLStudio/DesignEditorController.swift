@@ -36,6 +36,10 @@ final class DesignEditorController: ObservableObject {
         invoke("setEditable", arguments: [editable])
     }
 
+    func scrollToHeading(at index: Int) {
+        invoke("scrollToHeading", arguments: [index])
+    }
+
     func scheduleHTMLLoad(_ html: String, baseURL: URL?) {
         pendingLoad?.cancel()
         let item = DispatchWorkItem { [weak self] in

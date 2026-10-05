@@ -75,6 +75,10 @@ struct HTMLPreview: NSViewRepresentable {
         view.subviews.forEach { configureScrollers(in: $0) }
     }
 
+    static func contextMenuPoint(x: Double, y: Double, in view: NSView) -> NSPoint {
+        NSPoint(x: x, y: view.isFlipped ? y : view.bounds.height - y)
+    }
+
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         static let messageHandlerName = "htmlStudio"
 
@@ -262,10 +266,7 @@ struct HTMLPreview: NSViewRepresentable {
                 to: menu
             )
 
-            let point = NSPoint(
-                x: x,
-                y: max(0, webView.bounds.height - y)
-            )
+            let point = HTMLPreview.contextMenuPoint(x: x, y: y, in: webView)
             menu.popUp(positioning: nil, at: point, in: webView)
         }
 
@@ -541,6 +542,13 @@ struct HTMLPreview: NSViewRepresentable {
           }
           this.savedRange = null;
           this.placeCaretAtEnd(this.activePage);
+        },
+
+        scrollToHeading(index) {
+          const heading = document.querySelectorAll('h1,h2,h3,h4,h5,h6')[index];
+          if (!heading) return;
+          const rect = heading.getBoundingClientRect();
+          window.scrollTo({ top: Math.max(0, window.scrollY + rect.top - (window.innerHeight - rect.height) / 2), behavior: 'smooth' });
         },
 
         refocus() {

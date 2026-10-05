@@ -6,7 +6,11 @@
 
 A local-first HTML source and visual editor for macOS and Windows, with Markdown, DOCX and PDF export.
 
-[下载 v0.3.10](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.10) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+[下载 v0.3.11](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.11) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+
+## 0.3.11 更新
+
+修复 Markdown 导入后的窗口布局、完整目录滚动和标题跳转；新建 HTML 使用空白正文，系统“打开方式”只打开指定文件，右键菜单贴近点击位置，Esc 可退出全屏。Markdown 表格转换为包含样式的 HTML，导入后可选择立即保存或稍后保存。
 
 ## 功能
 

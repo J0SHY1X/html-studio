@@ -18,9 +18,9 @@ final class ChangeLogStore {
     private let historyDirectory: URL
     private let maximumEntries = 120
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, supportDirectory: URL? = nil) {
         self.fileManager = fileManager
-        let supportDirectory = fileManager.urls(
+        let supportDirectory = supportDirectory ?? fileManager.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first ?? fileManager.temporaryDirectory

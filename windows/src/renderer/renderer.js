@@ -13,29 +13,9 @@ const starterHTML = `<!doctype html>
       background: #ffffff;
       font: 17px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif;
     }
-    h1 { letter-spacing: -0.025em; }
-    .card {
-      margin-top: 30px;
-      padding: 24px;
-      border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
-      border-radius: 14px;
-      background: #f5f7fb;
-    }
   </style>
 </head>
 <body>
-  <h1>欢迎使用 HTML Studio for Windows</h1>
-  <p>可以编辑左侧 HTML，也可以直接点击右侧页面进行可视化编辑。</p>
-  <div class="card">
-    <strong>可以从这里开始：</strong>
-    <ul>
-      <li>在标签页中同时打开多个 HTML 文件</li>
-      <li>像 Word 一样修改字体、段落和表格</li>
-      <li>复制、追加页面，或从光标处把当前页拆成两页</li>
-      <li>查看修改日志并恢复历史版本</li>
-      <li>导出 Markdown、Word 或 PDF 文档</li>
-    </ul>
-  </div>
 </body>
 </html>`;
 
@@ -137,6 +117,7 @@ const elements = {
 
 const workspaceState = {
   documents: [],
+  recoveryDocuments: [],
   selectedDocumentId: null,
   lastUserDocumentId: null,
   activeEditor: "design",
@@ -238,9 +219,12 @@ function showToast(message) {
 }
 
 function persistWorkspace() {
-  const documents = workspaceState.documents.filter((documentValue) => (
-    !isGuide(documentValue)
-  ));
+  if (!workspaceState.documents.length) return;
+  const openDocuments = workspaceState.documents.filter((documentValue) => !isGuide(documentValue));
+  // Preserve unopened dirty drafts when launching with a specific file.
+  const documents = [...openDocuments, ...workspaceState.recoveryDocuments.filter((draft) => (
+    draft.dirty && !openDocuments.some((item) => item.id === draft.id)
+  ))];
   const selectedDocumentId = documents.some((documentValue) => (
     documentValue.id === workspaceState.selectedDocumentId
   ))
@@ -348,12 +332,19 @@ function updateOutline() {
     button.innerHTML = `<code>H${level}</code><span></span>`;
     button.querySelector("span").textContent = heading.textContent.trim() || "未命名标题";
     button.addEventListener("click", () => {
-      designDocument()?.querySelectorAll("h1,h2,h3,h4,h5,h6")[
-        headingIndex
-      ]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      scrollDesignTarget(designDocument()?.querySelectorAll("h1,h2,h3,h4,h5,h6")[headingIndex]);
     });
     elements.outline.appendChild(button);
   });
+}
+
+function scrollDesignTarget(target, block = "center") {
+  const frameWindow = designWindow();
+  if (!target || !frameWindow) return;
+  const rect = target.getBoundingClientRect();
+  // scrollIntoView also moves iframe ancestors, including the application shell.
+  const offset = block === "start" ? 16 : Math.max(0, (frameWindow.innerHeight - rect.height) / 2);
+  frameWindow.scrollTo({ top: Math.max(0, frameWindow.scrollY + rect.top - offset), behavior: "smooth" });
 }
 
 function renderTabs() {
@@ -1097,7 +1088,7 @@ function duplicateCurrentPage() {
   const pages = renumberPages();
   const number = pages.indexOf(clone) + 1;
   markActivePage(clone);
-  clone.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollDesignTarget(clone, "start");
   placeCaretAtEnd(clone);
   captureDesignHTML(`复制页面并新增第 ${number} 页`);
   showToast(`已复制为第 ${number} 页，可直接修改内容。`);
@@ -1129,7 +1120,7 @@ function insertBlankPage() {
   const pages = renumberPages();
   const number = pages.indexOf(blank) + 1;
   markActivePage(blank);
-  blank.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollDesignTarget(blank, "start");
   const editableBlock = blank.querySelector("h1,h2,h3,p") || blank;
   const range = frameDocument.createRange();
   range.selectNodeContents(editableBlock);
@@ -1206,7 +1197,7 @@ function splitCurrentPage() {
   const oldNumber = pages.indexOf(page) + 1;
   const newNumber = pages.indexOf(continuation) + 1;
   markActivePage(continuation);
-  continuation.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollDesignTarget(continuation, "start");
 
   const caretTarget = continuation.querySelector(
     ".script, .page-content, .slide-content, .content, main, article, h1, h2, h3, p, li, td, th"
@@ -1234,9 +1225,15 @@ function showContextMenu(x, y, target = "design") {
   });
   elements.contextMenu.hidden = false;
   elements.contextMenu.scrollTop = 0;
+  elements.contextMenu.style.maxHeight = "";
+  // Limit the menu to the space beside the click, so long menus stay anchored.
+  const below = Math.max(0, innerHeight - y - 6);
+  const above = Math.max(0, y - 6);
+  const openBelow = below >= Math.min(elements.contextMenu.scrollHeight, 240) || below >= above;
+  elements.contextMenu.style.maxHeight = `${Math.max(1, openBelow ? below : above)}px`;
   const bounds = elements.contextMenu.getBoundingClientRect();
   elements.contextMenu.style.left = `${Math.max(6, Math.min(x, innerWidth - bounds.width - 6))}px`;
-  elements.contextMenu.style.top = `${Math.max(6, Math.min(y, innerHeight - bounds.height - 6))}px`;
+  elements.contextMenu.style.top = `${Math.max(6, Math.min(openBelow ? y : y - bounds.height, innerHeight - bounds.height - 6))}px`;
 }
 
 function hideContextMenu() {
@@ -1530,47 +1527,63 @@ async function newDocument() {
 async function openDocument() {
   try {
     const results = await window.htmlStudioAPI.openFile();
-    if (!Array.isArray(results) || !results.length) return;
-    let lastDocument = null;
-    for (const result of results) {
-      const isMarkdown = [".md", ".markdown"].includes(result.extension);
-      const existing = !isMarkdown && workspaceState.documents.find((documentValue) => (
-        documentValue.filePath?.toLowerCase() === result.filePath.toLowerCase()
-      ));
-      if (existing) {
-        lastDocument = existing;
-        continue;
-      }
-      const html = isMarkdown
-        ? window.HTMLStudioConverters.markdownToHTML(result.content)
-        : result.content;
-      const documentValue = createDocument({
-        html,
-        filePath: isMarkdown ? null : result.filePath,
-        importedName: isMarkdown
-          ? result.filePath.split(/[\\/]/).pop().replace(/\.(md|markdown)$/i, ".html")
-          : null,
-        baseURL: isMarkdown ? null : result.baseURL,
-        dirty: isMarkdown,
-        savedHTML: isMarkdown ? "" : html
-      });
-      workspaceState.documents.push(documentValue);
-      lastDocument = documentValue;
-      await initializeHistory(
-        documentValue,
-        isMarkdown ? "导入 Markdown 文件" : "打开 HTML 文件",
-        "文件"
-      );
-    }
-    if (lastDocument) {
-      workspaceState.selectedDocumentId = lastDocument.id;
-      workspaceState.lastUserDocumentId = lastDocument.id;
-      refreshActiveDocument();
-      persistWorkspace();
-      showToast(results.length > 1 ? `已在标签页中打开 ${results.length} 个文件。` : "文件已在新标签页中打开。");
-    }
+    await openDocumentResults(results);
   } catch (error) {
     showToast(`打开失败：${error.message}`);
+  }
+}
+
+async function openDocumentResults(results) {
+  if (!Array.isArray(results) || !results.length) return;
+  let lastDocument = null;
+  const importedDocuments = [];
+  for (const result of results) {
+    if (result.error) {
+      showToast(`打开失败：${result.error}`);
+      continue;
+    }
+    const isMarkdown = [".md", ".markdown"].includes(result.extension);
+    const existing = !isMarkdown && workspaceState.documents.find((documentValue) => (
+      documentValue.filePath?.toLowerCase() === result.filePath.toLowerCase()
+    ));
+    if (existing) {
+      lastDocument = existing;
+      continue;
+    }
+    const html = isMarkdown
+      ? window.HTMLStudioConverters.markdownToHTML(result.content)
+      : result.content;
+    const documentValue = createDocument({
+      html,
+      filePath: isMarkdown ? null : result.filePath,
+      importedName: isMarkdown
+        ? result.filePath.split(/[\\/]/).pop().replace(/\.(md|markdown)$/i, ".html")
+        : null,
+      baseURL: result.baseURL,
+      dirty: isMarkdown,
+      savedHTML: isMarkdown ? "" : html
+    });
+    workspaceState.documents.push(documentValue);
+    if (isMarkdown) importedDocuments.push(documentValue);
+    lastDocument = documentValue;
+    await initializeHistory(
+      documentValue,
+      isMarkdown ? "导入 Markdown 文件" : "打开 HTML 文件",
+      "文件"
+    );
+  }
+  if (lastDocument) {
+    workspaceState.selectedDocumentId = lastDocument.id;
+    workspaceState.lastUserDocumentId = lastDocument.id;
+    refreshActiveDocument();
+    persistWorkspace();
+    showToast(results.length > 1 ? `已在标签页中打开 ${results.length} 个文件。` : "文件已在新标签页中打开。");
+  }
+  for (const imported of importedDocuments) {
+    if (await window.htmlStudioAPI.confirmMarkdownImport(fileName(imported))) {
+      selectDocument(imported);
+      await saveDocument(true);
+    }
   }
 }
 
@@ -1908,11 +1921,7 @@ function selectFindMatch(index) {
   selection.addRange(range);
   state.savedRange = range.cloneRange();
   markActivePage(match.node);
-  match.node.parentElement?.scrollIntoView({
-    behavior: "smooth",
-    block: "center",
-    inline: "nearest"
-  });
+  scrollDesignTarget(match.node.parentElement);
   return true;
 }
 
@@ -2472,12 +2481,20 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-function restoreWorkspace() {
+function restoreWorkspace(externalLaunch = false) {
   let restored = null;
   try {
     restored = JSON.parse(localStorage.getItem(workspaceStorageKey) || "null");
   } catch {
     restored = null;
+  }
+  if (externalLaunch) {
+    workspaceState.recoveryDocuments = Array.isArray(restored?.documents)
+      ? restored.documents.filter((item) => item.dirty).map(createDocument)
+      : [];
+    workspaceState.documents = [];
+    workspaceState.selectedDocumentId = null;
+    return;
   }
   if (Array.isArray(restored?.documents) && restored.documents.length) {
     const documents = restored.documents.map(createDocument);
@@ -2517,14 +2534,30 @@ function restoreWorkspace() {
   localStorage.removeItem("htmlStudioWindowsDraft");
 }
 
-restoreWorkspace();
-renderTabs();
-refreshActiveDocument();
-workspaceState.documents.forEach((documentValue) => {
-  if (isGuide(documentValue)) return;
-  initializeHistory(
-    documentValue,
-    documentValue.dirty ? "恢复自动草稿" : null,
-    "文件"
-  );
+let workspaceInitialized = false;
+let externalOpenQueue = Promise.resolve();
+const pendingExternalFiles = [];
+window.htmlStudioAPI.onOpenFiles((files) => {
+  if (!workspaceInitialized) pendingExternalFiles.push(files);
+  else externalOpenQueue = externalOpenQueue.then(() => openDocumentResults(files));
 });
+
+async function initializeWorkspace() {
+  const startup = await window.htmlStudioAPI.startupFiles();
+  restoreWorkspace(startup.externalLaunch);
+  if (startup.externalLaunch) await openDocumentResults(startup.files);
+  if (!workspaceState.documents.length) await newDocument();
+  renderTabs();
+  refreshActiveDocument();
+  for (const documentValue of workspaceState.documents) {
+    if (!isGuide(documentValue) && !documentValue.historyKey) {
+      await initializeHistory(documentValue, documentValue.dirty ? "恢复自动草稿" : null, "文件");
+    }
+  }
+  workspaceInitialized = true;
+  for (const files of pendingExternalFiles.splice(0)) {
+    externalOpenQueue = externalOpenQueue.then(() => openDocumentResults(files));
+  }
+}
+
+initializeWorkspace().catch((error) => showToast(`启动失败：${error.message}`));

@@ -38,7 +38,7 @@ public final class ConversionService {
 
     public func markdownToHTML(_ markdown: String) throws -> String {
         if let pandocURL {
-            return try runPandoc(
+            let html = try runPandoc(
                 executable: pandocURL,
                 arguments: [
                     "--from=gfm",
@@ -48,6 +48,7 @@ public final class ConversionService {
                 ],
                 standardInput: markdown
             )
+            return MarkdownHTMLStyle.apply(to: html)
         }
         return FallbackHTMLConverter.markdownToHTML(markdown)
     }
@@ -170,6 +171,26 @@ public final class ConversionService {
     }
 }
 
+public enum MarkdownHTMLStyle {
+    public static let css = """
+    body { max-width: 780px; margin: 48px auto; padding: 0 24px; font: 17px/1.7 -apple-system, BlinkMacSystemFont, sans-serif; }
+    pre { padding: 16px; overflow: auto; border-radius: 10px; background: #f3f4f6; }
+    img { max-width: 100%; }
+    table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; overflow-wrap: anywhere; }
+    th { background: #f1f5f9; font-weight: 600; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    code { background: #f3f4f6; padding: 2px 4px; border-radius: 3px; }
+    """
+
+    public static func apply(to html: String) -> String {
+        guard let headEnd = html.range(of: "</head>", options: .caseInsensitive) else { return html }
+        var result = html
+        result.insert(contentsOf: "<style>\n\(css)\n</style>\n", at: headEnd.lowerBound)
+        return result
+    }
+}
+
 public enum FallbackHTMLConverter {
     public static func htmlToMarkdown(_ html: String) -> String {
         var value = html
@@ -231,7 +252,10 @@ public enum FallbackHTMLConverter {
             }
         }
 
-        for line in lines {
+        var index = 0
+        while index < lines.count {
+            let line = lines[index]
+            index += 1
             if line.hasPrefix("```") {
                 closeList()
                 if inCode {
@@ -244,6 +268,35 @@ public enum FallbackHTMLConverter {
 
             if inCode {
                 codeLines.append(line)
+                continue
+            }
+
+            let header = tableCells(line)
+            let delimiters = index < lines.count ? tableCells(lines[index]) : []
+            if line.contains("|"), header.count == delimiters.count,
+               !delimiters.isEmpty,
+               delimiters.allSatisfy({ $0.range(of: #"^:?-+:?$"#, options: .regularExpression) != nil }) {
+                closeList()
+                let alignments = delimiters.map { cell -> String? in
+                    if cell.hasPrefix(":") { return cell.hasSuffix(":") ? "center" : "left" }
+                    return cell.hasSuffix(":") ? "right" : nil
+                }
+                func rowHTML(_ cells: [String], tag: String) -> String {
+                    let columns = header.indices.map { column -> String in
+                        let style = alignments[column].map { " style=\"text-align: \($0)\"" } ?? ""
+                        let content = column < cells.count ? cells[column] : ""
+                        return "<\(tag)\(style)>\(inlineMarkdown(content))</\(tag)>"
+                    }.joined()
+                    return "<tr>\(columns)</tr>"
+                }
+                index += 1
+                var rows: [String] = []
+                while index < lines.count, !lines[index].trimmingCharacters(in: .whitespaces).isEmpty,
+                      lines[index].contains("|"), !lines[index].hasPrefix("```") {
+                    rows.append(rowHTML(tableCells(lines[index]), tag: "td"))
+                    index += 1
+                }
+                body.append("<table><thead>\(rowHTML(header, tag: "th"))</thead><tbody>\(rows.joined())</tbody></table>")
                 continue
             }
 
@@ -267,6 +320,9 @@ public enum FallbackHTMLConverter {
             }
         }
         closeList()
+        if inCode {
+            body.append("<pre><code>\(escapeHTML(codeLines.joined(separator: "\n")))</code></pre>")
+        }
 
         return """
         <!doctype html>
@@ -276,9 +332,7 @@ public enum FallbackHTMLConverter {
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <title>Imported Markdown</title>
           <style>
-            body { max-width: 780px; margin: 48px auto; padding: 0 24px; font: 17px/1.7 -apple-system, BlinkMacSystemFont, sans-serif; }
-            pre { padding: 16px; overflow: auto; border-radius: 10px; background: #f3f4f6; }
-            img { max-width: 100%; }
+            \(MarkdownHTMLStyle.css)
           </style>
         </head>
         <body>
@@ -305,12 +359,61 @@ public enum FallbackHTMLConverter {
     }
 
     private static func inlineMarkdown(_ value: String) -> String {
+        var value = value
+        var code: [String] = []
+        if let regex = try? NSRegularExpression(pattern: #"`([^`]+)`"#) {
+            let source = value as NSString
+            let matches = regex.matches(in: value, range: NSRange(location: 0, length: source.length))
+            code = matches.map { "<code>\(escapeHTML(source.substring(with: $0.range(at: 1))))</code>" }
+            for (index, match) in matches.enumerated().reversed() {
+                if let range = Range(match.range, in: value) {
+                    value.replaceSubrange(range, with: "\u{0}CODE\(index)\u{0}")
+                }
+            }
+        }
         var result = escapeHTML(value)
         result = replacing(#"\*\*(.+?)\*\*"#, in: result, with: "<strong>$1</strong>")
         result = replacing(#"\*(.+?)\*"#, in: result, with: "<em>$1</em>")
-        result = replacing(#"`(.+?)`"#, in: result, with: "<code>$1</code>")
         result = replacing(#"\[([^\]]+)\]\(([^)]+)\)"#, in: result, with: #"<a href="$2">$1</a>"#)
+        for (index, html) in code.enumerated() {
+            result = result.replacingOccurrences(of: "\u{0}CODE\(index)\u{0}", with: html)
+        }
         return result
+    }
+
+    private static func tableCells(_ line: String) -> [String] {
+        let text = line.trimmingCharacters(in: .whitespaces)
+        let characters = Array(text)
+        var cells: [String] = []
+        var cell = ""
+        var codeFence = 0
+        var index = 0
+        while index < characters.count {
+            let character = characters[index]
+            if character == "\\", index + 1 < characters.count {
+                index += 1
+                let next = characters[index]
+                cell += next == "|" ? "|" : "\\" + String(next)
+            } else if character == "`" {
+                var count = 1
+                while index + 1 < characters.count, characters[index + 1] == "`" {
+                    count += 1
+                    index += 1
+                }
+                codeFence = codeFence == count ? 0 : (codeFence == 0 ? count : codeFence)
+                cell += String(repeating: "`", count: count)
+            } else if character == "|", codeFence == 0 {
+                cells.append(cell.trimmingCharacters(in: .whitespaces))
+                cell = ""
+            } else {
+                cell.append(character)
+            }
+            index += 1
+        }
+        cells.append(cell.trimmingCharacters(in: .whitespaces))
+        if text.hasPrefix("|"), cells.first == "" { cells.removeFirst() }
+        if cells.count > 1, cells.last == "" { cells.removeLast() }
+        return cells
     }
 
     private static func replacing(

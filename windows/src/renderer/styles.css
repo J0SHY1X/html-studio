@@ -21,15 +21,22 @@ body {
   width: 100%;
   height: 100%;
   margin: 0;
-  overflow: hidden;
+  overflow: clip;
   background: var(--app-bg);
   color: var(--text);
   font: 14px/1.45 "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 
 body {
-  display: grid;
-  grid-template-rows: 58px 36px auto minmax(0, 1fr) 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+body > .app-header,
+body > .document-tabs,
+body > .find-replace-bar,
+body > .status-bar {
+  flex: none;
 }
 
 button,
@@ -143,7 +150,9 @@ button.primary {
 .app-shell {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
+  flex: 1;
   min-height: 0;
+  overflow: clip;
 }
 
 .find-replace-bar {
@@ -297,12 +306,16 @@ button.primary {
 
 .sidebar {
   display: flex;
+  min-width: 0;
+  min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   border-right: 1px solid var(--border);
   background: #111923;
 }
 
 .sidebar section {
+  flex: none;
   padding: 16px;
   border-bottom: 1px solid var(--border);
 }
@@ -345,10 +358,11 @@ button.primary {
   font-family: Consolas, monospace;
 }
 
-.outline-section {
-  flex: 1;
+.sidebar .outline-section {
+  flex: 1 1 0;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .outline {
@@ -363,6 +377,13 @@ button.primary {
   padding: 6px;
   color: #c8d3df;
   text-align: left;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.outline button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .outline code {

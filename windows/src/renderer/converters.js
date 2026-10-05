@@ -8,15 +8,46 @@
   }
 
   function inlineMarkdown(value) {
+    const code = [];
+    value = value.replace(/`([^`]+)`/g, (_match, content) => {
+      const token = `\u0000CODE${code.length}\u0000`;
+      code.push(`<code>${escapeHTML(content)}</code>`);
+      return token;
+    });
     let result = escapeHTML(value);
     result = result.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     result = result.replace(/\*(.+?)\*/g, "<em>$1</em>");
-    result = result.replace(/`(.+?)`/g, "<code>$1</code>");
     result = result.replace(
       /\[([^\]]+)\]\(([^)]+)\)/g,
       '<a href="$2">$1</a>'
     );
-    return result;
+    return result.replace(/\u0000CODE(\d+)\u0000/g, (_match, index) => code[Number(index)]);
+  }
+
+  function tableCells(line) {
+    const cells = [];
+    let cell = "";
+    let codeFence = 0;
+    const text = line.trim();
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index];
+      if (character === "\\" && index + 1 < text.length) {
+        const next = text[++index];
+        cell += next === "|" ? "|" : character + next;
+      } else if (character === "`") {
+        let count = 1;
+        while (text[index + 1] === "`") { count += 1; index += 1; }
+        codeFence = codeFence === count ? 0 : (codeFence || count);
+        cell += "`".repeat(count);
+      } else if (character === "|" && !codeFence) {
+        cells.push(cell.trim());
+        cell = "";
+      } else cell += character;
+    }
+    cells.push(cell.trim());
+    if (text.startsWith("|") && cells[0] === "") cells.shift();
+    if (cells.length > 1 && cells.at(-1) === "") cells.pop();
+    return cells;
   }
 
   function markdownToHTML(markdown) {
@@ -31,7 +62,8 @@
       listType = null;
     };
 
-    for (const line of lines) {
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
       if (line.startsWith("```")) {
         closeList();
         if (inCode) {
@@ -43,6 +75,26 @@
       }
       if (inCode) {
         codeLines.push(line);
+        continue;
+      }
+
+      const header = tableCells(line);
+      const delimiters = tableCells(lines[index + 1] || "");
+      if (line.includes("|") && header.length === delimiters.length &&
+          delimiters.length && delimiters.every((cell) => /^:?-+:?$/.test(cell))) {
+        closeList();
+        const alignments = delimiters.map((cell) => cell.startsWith(":")
+          ? (cell.endsWith(":") ? "center" : "left") : (cell.endsWith(":") ? "right" : null));
+        const rowHTML = (cells, tag) => `<tr>${header.map((_cell, column) => (
+          `<${tag}${alignments[column] ? ` style="text-align: ${alignments[column]}"` : ""}>${inlineMarkdown(cells[column] || "")}</${tag}>`
+        )).join("")}</tr>`;
+        const rows = [];
+        index += 1;
+        while (index + 1 < lines.length && lines[index + 1].trim() &&
+               lines[index + 1].includes("|") && !lines[index + 1].startsWith("```")) {
+          rows.push(rowHTML(tableCells(lines[++index]), "td"));
+        }
+        output.push(`<table><thead>${rowHTML(header, "th")}</thead><tbody>${rows.join("")}</tbody></table>`);
         continue;
       }
 
@@ -69,6 +121,7 @@
       }
     }
     closeList();
+    if (inCode) output.push(`<pre><code>${escapeHTML(codeLines.join("\n"))}</code></pre>`);
 
     return `<!doctype html>
 <html lang="zh-CN">
@@ -79,6 +132,11 @@
   <style>
     body { max-width: 780px; margin: 48px auto; padding: 0 24px; font: 17px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif; }
     img { max-width: 100%; }
+    table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; overflow-wrap: anywhere; }
+    th { background: #f1f5f9; font-weight: 600; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    code { background: #f3f4f6; padding: 2px 4px; border-radius: 3px; }
     pre { padding: 16px; overflow: auto; border-radius: 8px; background: #f3f4f6; }
   </style>
 </head>

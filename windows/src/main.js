@@ -11,6 +11,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { exportHTMLToPDF, printHTML } = require("./pdf-export");
+const { filePathsFromArguments } = require("./file-launch");
 const {
   AlignmentType,
   BorderStyle,
@@ -28,6 +29,47 @@ const {
 let mainWindow = null;
 let printOperationInProgress = false;
 const maximumHistoryEntries = 120;
+const ownsInstanceLock = app.requestSingleInstanceLock();
+let rendererReady = false;
+const pendingFilePaths = filePathsFromArguments(process.argv.slice(1));
+let externalFileDispatch = Promise.resolve();
+
+async function readDocumentFiles(filePaths) {
+  return Promise.all(filePaths.map(async (filePath) => {
+    try {
+      const content = await fs.readFile(filePath, "utf8");
+      app.addRecentDocument(filePath);
+      return { content, filePath, extension: path.extname(filePath).toLowerCase(), baseURL: baseURLForFile(filePath) };
+    } catch (error) {
+      return { filePath, error: `${path.basename(filePath)}：${error.message}` };
+    }
+  }));
+}
+
+function enqueueExternalFiles(filePaths) {
+  pendingFilePaths.push(...filePaths);
+  if (!rendererReady || !mainWindow || mainWindow.isDestroyed()) return;
+  const paths = [...new Set(pendingFilePaths.splice(0))];
+  if (!paths.length) return;
+  externalFileDispatch = externalFileDispatch.then(async () => {
+    const files = await readDocumentFiles(paths);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("open-files", files);
+  });
+}
+
+app.on("open-file", (event, filePath) => {
+  event.preventDefault();
+  enqueueExternalFiles([filePath]);
+});
+
+app.on("second-instance", (_event, argumentsList, workingDirectory) => {
+  enqueueExternalFiles(filePathsFromArguments(argumentsList.slice(1), workingDirectory));
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
 
 const headingMap = {
   1: HeadingLevel.HEADING_1,
@@ -332,6 +374,7 @@ function createApplicationMenu() {
 }
 
 function createWindow() {
+  rendererReady = false;
   mainWindow = new BrowserWindow({
     width: 1480,
     height: 900,
@@ -348,8 +391,33 @@ function createWindow() {
       webviewTag: false
     }
   });
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.key === "Escape" && mainWindow.isFullScreen()) {
+      event.preventDefault();
+      mainWindow.setFullScreen(false);
+    }
+  });
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
+
+ipcMain.handle("file:startup", async () => {
+  const paths = [...new Set(pendingFilePaths.splice(0))];
+  rendererReady = true;
+  return { externalLaunch: paths.length > 0, files: await readDocumentFiles(paths) };
+});
+
+ipcMain.handle("file:confirmMarkdownImport", async (_event, name) => {
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: "question",
+    title: "Markdown 已转换",
+    message: "是否将转换后的文档另存为 HTML？",
+    detail: `${safeSuggestedName(name, "未命名.html")} 的表格和页面样式将随 HTML 一起保存，原 Markdown 文件保持不变。`,
+    buttons: ["另存为 HTML", "稍后保存"],
+    defaultId: 0,
+    cancelId: 1
+  });
+  return result.response === 0;
+});
 
 ipcMain.handle("file:open", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -361,17 +429,7 @@ ipcMain.handle("file:open", async () => {
     ]
   });
   if (result.canceled || !result.filePaths.length) return [];
-  return Promise.all(result.filePaths.map(async (filePath) => {
-    const content = await fs.readFile(filePath, "utf8");
-    const extension = path.extname(filePath).toLowerCase();
-    app.addRecentDocument(filePath);
-    return {
-      content,
-      filePath,
-      extension,
-      baseURL: baseURLForFile(filePath)
-    };
-  }));
+  return readDocumentFiles(result.filePaths);
 });
 
 ipcMain.handle("file:saveHTML", async (_event, request) => {
@@ -576,7 +634,9 @@ ipcMain.handle("window:setTitle", (_event, title) => {
   }
 });
 
-app.whenReady().then(() => {
+if (!ownsInstanceLock) {
+  app.quit();
+} else app.whenReady().then(() => {
   createApplicationMenu();
   createWindow();
   app.on("activate", () => {

@@ -17,13 +17,21 @@ private enum ActiveEditorSurface {
 }
 
 struct ContentView: View {
-    @StateObject private var workspace = DocumentWorkspace()
+    @StateObject private var workspace: DocumentWorkspace
+
+    @MainActor
+    init(workspace: DocumentWorkspace? = nil) {
+        _workspace = StateObject(wrappedValue: workspace ?? DocumentWorkspace())
+    }
 
     var body: some View {
-        DocumentEditorView(
-            workspace: workspace,
-            document: workspace.activeDocument
-        )
+        GeometryReader { geometry in
+            DocumentEditorView(
+                workspace: workspace,
+                document: workspace.activeDocument
+            )
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        }
     }
 }
 
@@ -135,9 +143,20 @@ private struct DocumentEditorView: View {
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioOpenDocument)) { _ in
                 openFromPanel()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioOpenExternalFiles)) { notification in
-                let urls = notification.userInfo?["urls"] as? [URL] ?? []
-                urls.forEach(open)
+            .onReceive(FileOpenRequests.shared.$pendingURLs) { urls in
+                guard !urls.isEmpty else { return }
+                // @Published emits before assigning. Drain on the next turn so an
+                // early Finder event cannot be requeued by the original setter.
+                DispatchQueue.main.async {
+                    let pending = FileOpenRequests.shared.pendingURLs
+                    FileOpenRequests.shared.pendingURLs = []
+                    pending.forEach { open($0, fromExternalRequest: true) }
+                }
+            }
+            .onReceive(FileOpenRequests.shared.$didFinishLaunching) { finished in
+                if finished && !FileOpenRequests.shared.launchedWithFiles {
+                    workspace.restoreStartupDraft()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocument)) { _ in
                 _ = save(document)
@@ -168,10 +187,13 @@ private struct DocumentEditorView: View {
                 workspaceView
                     .frame(minWidth: 560)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(1)
 
             Divider()
             statusBar
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle(document.displayName + (document.isDirty ? " — 已修改" : ""))
         .onChange(of: document.previewRevision) { _ in
             document.designController.scheduleHTMLLoad(
@@ -446,27 +468,37 @@ private struct DocumentEditorView: View {
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 7) {
-                            ForEach(outlineItems) { item in
-                                HStack(spacing: 6) {
-                                    Text("H\(item.level)")
-                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 18)
-                                    Text(item.title)
-                                        .font(.caption)
-                                        .lineLimit(1)
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 7) {
+                            ForEach(Array(outlineItems.enumerated()), id: \.offset) { index, item in
+                                Button {
+                                    document.designController.scrollToHeading(at: index)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text("H\(item.level)")
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 18)
+                                        Text(item.title)
+                                            .font(.caption)
+                                            .lineLimit(1)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
+                                .help(item.title)
                                 .padding(.leading, CGFloat(max(0, item.level - 1)) * 7)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .frame(maxHeight: .infinity)
                 }
             }
             .padding(14)
-
-            Spacer()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .layoutPriority(1)
 
             Divider()
 
@@ -480,6 +512,7 @@ private struct DocumentEditorView: View {
             }
             .padding(14)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .controlBackgroundColor))
     }
 
@@ -740,12 +773,20 @@ private struct DocumentEditorView: View {
             UTType(filenameExtension: "docx") ?? .data
         ]
         guard panel.runModal() == .OK else { return }
-        panel.urls.forEach(open)
+        panel.urls.forEach { open($0) }
     }
 
-    private func open(_ url: URL) {
+    private func open(_ url: URL, fromExternalRequest: Bool = false) {
         do {
-            try workspace.open(url)
+            let opened = try workspace.open(url, fromExternalRequest: fromExternalRequest)
+            if ["md", "markdown"].contains(url.pathExtension.lowercased()) {
+                let alert = NSAlert()
+                alert.messageText = "是否将转换后的文档另存为 HTML？"
+                alert.informativeText = "表格和页面样式将随 HTML 一起保存，原 Markdown 文件保持不变。"
+                alert.addButton(withTitle: "另存为 HTML")
+                alert.addButton(withTitle: "稍后保存")
+                if alert.runModal() == .alertFirstButtonReturn { _ = saveAs(opened) }
+            }
         } catch {
             present(error)
         }
@@ -790,7 +831,7 @@ private struct DocumentEditorView: View {
     private func saveAs(_ target: EditorDocument) -> Bool {
         let panel = NSSavePanel()
         panel.title = "保存 HTML"
-        panel.nameFieldStringValue = target.fileURL?.lastPathComponent ?? "未命名.html"
+        panel.nameFieldStringValue = target.displayName
         panel.allowedContentTypes = [.html]
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return false }

@@ -4,6 +4,7 @@ struct DraftSnapshot: Codable {
     let identifier: UUID?
     let html: String
     let filePath: String?
+    let importedSourcePath: String?
     let isDirty: Bool
     let savedAt: Date
 }
@@ -16,9 +17,9 @@ final class DraftStore {
     private let legacyDraftURL: URL
     private let draftsDirectory: URL
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, supportDirectory: URL? = nil) {
         self.fileManager = fileManager
-        let supportDirectory = fileManager.urls(
+        let supportDirectory = supportDirectory ?? fileManager.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first ?? fileManager.temporaryDirectory
@@ -34,7 +35,8 @@ final class DraftStore {
         identifier: UUID,
         html: String,
         filePath: String?,
-        isDirty: Bool
+        isDirty: Bool,
+        importedSourcePath: String? = nil
     ) {
         guard isDirty else {
             clear(identifier: identifier)
@@ -50,6 +52,7 @@ final class DraftStore {
                 identifier: identifier,
                 html: html,
                 filePath: filePath,
+                importedSourcePath: importedSourcePath,
                 isDirty: isDirty,
                 savedAt: Date()
             )

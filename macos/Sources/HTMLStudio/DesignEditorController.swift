@@ -6,12 +6,27 @@ import WebKit
 final class DesignEditorController: ObservableObject {
     @Published private(set) var isReady = false
     @Published private(set) var statusText = "正在准备可视化编辑器…"
+    @Published private(set) var zoomPercent = 100
 
     private weak var webView: WKWebView?
     private var pendingLoad: DispatchWorkItem?
 
     func attach(_ webView: WKWebView) {
         self.webView = webView
+        webView.pageZoom = Double(zoomPercent) / 100
+    }
+
+    func setZoom(_ percent: Int) {
+        zoomPercent = min(200, max(50, percent))
+        webView?.pageZoom = Double(zoomPercent) / 100
+    }
+
+    func selectedText(completion: @escaping (String) -> Void) {
+        invoke("selectedText", arguments: []) { completion($0 as? String ?? "") }
+    }
+
+    func insertComponent(_ html: String, action: String) {
+        invoke("insertComponent", arguments: [html, action])
     }
 
     func detach(_ webView: WKWebView) {
@@ -45,7 +60,7 @@ final class DesignEditorController: ObservableObject {
         let item = DispatchWorkItem { [weak self] in
             guard let self, let webView = self.webView else { return }
             self.setReady(false)
-            webView.loadHTMLString(html, baseURL: baseURL)
+            webView.loadHTMLString(html, baseURL: PreviewBaseURL.effectiveURL(for: html, proposed: baseURL))
         }
         pendingLoad = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: item)
@@ -54,7 +69,7 @@ final class DesignEditorController: ObservableObject {
     func loadHTMLImmediately(_ html: String, baseURL: URL?) {
         pendingLoad?.cancel()
         setReady(false)
-        webView?.loadHTMLString(html, baseURL: baseURL)
+        webView?.loadHTMLString(html, baseURL: PreviewBaseURL.effectiveURL(for: html, proposed: baseURL))
     }
 
     func execute(_ command: String, value: String? = nil) {

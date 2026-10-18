@@ -662,9 +662,19 @@ input:disabled {
   cursor: pointer;
 }
 
+.design-viewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
 #design-frame {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
+  width: calc(100% / var(--page-scale, 1));
+  height: calc(100% / var(--page-scale, 1));
+  transform: scale(var(--page-scale, 1));
+  transform-origin: top left;
   border: 0;
   background: white;
 }
@@ -684,6 +694,53 @@ input:disabled {
 .status-spacer {
   flex: 1;
 }
+
+.page-zoom {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 22px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+  gap: 2px;
+}
+.page-zoom button { min-width: 24px; height: 22px; padding: 0 3px; font-size: 12px; }
+#zoom-reset { min-width: 44px; font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.component-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 24px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.component-dialog::backdrop { background: #0008; }
+.component-dialog form { display: flex; flex-direction: column; gap: 14px; }
+.component-dialog h2, .component-dialog p { margin: 0; }
+.component-dialog p, .component-dialog small { color: var(--muted); font-size: 12px; }
+.component-dialog label { display: flex; flex-direction: column; gap: 6px; }
+.component-dialog input[type="text"], .component-dialog textarea, .component-dialog select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--app-bg);
+  font: inherit;
+}
+.component-dialog textarea { resize: vertical; min-height: 90px; }
+.component-dialog label.component-checkbox { flex-direction: row; align-items: center; }
+#component-image-tools { margin-top: 8px; }
+#component-image-tools small { display: block; margin-top: 6px; }
+#component-image-name { margin-left: 8px; overflow-wrap: anywhere; }
+#component-error { color: var(--danger); }
+.component-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.component-dialog-actions button, #component-image-tools button { padding: 6px 12px; border: 1px solid var(--border); }
+.component-dialog [hidden] { display: none !important; }
 
 .status-dot {
   width: 7px;

@@ -9,9 +9,14 @@ if [[ -z ${SDKROOT:-} ]]; then
 fi
 export SWIFTPM_MODULECACHE_OVERRIDE="$PROJECT_ROOT/.build/module-cache"
 export CLANG_MODULE_CACHE_PATH="$PROJECT_ROOT/.build/clang-module-cache"
+typeset -a BUILD_FLAGS
+BUILD_FLAGS=(--sdk "$SDKROOT")
+if [[ -n ${HTML_STUDIO_SWIFT_BUILD_SYSTEM:-} ]]; then
+  BUILD_FLAGS+=(--build-system "$HTML_STUDIO_SWIFT_BUILD_SYSTEM")
+fi
 
-swift build --disable-sandbox -c release --package-path "$PROJECT_ROOT" --product HTMLStudio
-BUILD_BIN=$(swift build --disable-sandbox -c release --package-path "$PROJECT_ROOT" --show-bin-path)
+swift build --disable-sandbox "${BUILD_FLAGS[@]}" -c release --package-path "$PROJECT_ROOT" --product HTMLStudio
+BUILD_BIN=$(swift build --disable-sandbox "${BUILD_FLAGS[@]}" -c release --package-path "$PROJECT_ROOT" --show-bin-path)
 DIST_DIR="$PROJECT_ROOT/dist"
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PROJECT_ROOT/Resources/Info.plist")
 ARCH=$(uname -m)

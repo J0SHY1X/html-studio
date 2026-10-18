@@ -5,7 +5,7 @@ import SwiftUI
 import WebKit
 @testable import HTMLStudio
 
-@Suite
+@Suite(.serialized)
 struct DocumentRegressionTests {
     private final class FlippedView: NSView {
         override var isFlipped: Bool { true }

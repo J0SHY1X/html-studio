@@ -27,6 +27,7 @@
       <span class="header-separator" aria-hidden="true"></span>
       <button id="undo-button" title="撤销当前编辑区域 (Ctrl+Z)">↶ 撤销</button>
       <button id="redo-button" title="重做当前编辑区域 (Ctrl+Shift+Z / Ctrl+Y)">↷ 重做</button>
+      <button id="components-button" title="插入链接、按钮、图片、卡片等常用组件">⊞ 组件</button>
       <button id="find-button" title="在当前编辑区域查找 (Ctrl+F)">⌕ 查找</button>
     </div>
 
@@ -88,7 +89,7 @@
       </section>
 
       <section class="sidebar-footer">
-        <span>Windows 版 · 0.3.11</span>
+        <span>Windows 版 · 0.3.12</span>
         <span>本地离线编辑</span>
       </section>
     </aside>
@@ -237,11 +238,13 @@
           </div>
         </div>
 
+        <div class="design-viewport">
         <iframe
           id="design-frame"
           title="可视化 HTML 编辑器"
           sandbox="allow-same-origin"
         ></iframe>
+        </div>
       </section>
     </section>
   </main>
@@ -253,7 +256,40 @@
     <span id="line-count">1 行</span>
     <span id="character-count">0 字符</span>
     <span>UTF-8</span>
+    <div class="page-zoom" role="group" aria-label="页面显示比例">
+      <button id="zoom-out" title="缩小页面" aria-label="缩小页面">−</button>
+      <button id="zoom-reset" title="点击恢复 100%" aria-label="恢复页面显示比例为 100%">100%</button>
+      <button id="zoom-in" title="放大页面" aria-label="放大页面">＋</button>
+    </div>
   </footer>
+
+  <dialog id="component-dialog" class="component-dialog" aria-labelledby="component-dialog-title">
+    <form id="component-form">
+      <h2 id="component-dialog-title">插入组件</h2>
+      <p>插入到当前光标或选区，之后可在页面或源码中继续编辑。</p>
+      <label>组件类型<select id="component-kind"></select></label>
+      <label id="component-title-row"><span id="component-title-label">文字 / 标题</span><input id="component-title" type="text"></label>
+      <div id="component-address-row">
+        <label><span id="component-address-label">链接地址</span><input id="component-address" type="text" placeholder="https://example.com" spellcheck="false"></label>
+        <div id="component-image-tools" hidden>
+          <button id="component-image-choose" type="button">选择本地图片…</button>
+          <input id="component-image-file" type="file" accept="image/*" hidden>
+          <span id="component-image-name"></span>
+          <button id="component-image-clear" type="button" hidden>清除</button>
+          <small>本地图片将嵌入 HTML，可随文件一起保存。</small>
+        </div>
+        <small id="component-button-hint" hidden>可选：填写链接后，按钮可跳转到该地址。</small>
+      </div>
+      <label id="component-new-window-row" class="component-checkbox"><input id="component-new-window" type="checkbox">在新窗口打开链接</label>
+      <label id="component-content-row"><span id="component-content-label">内容</span><textarea id="component-content" rows="4"></textarea></label>
+      <p id="component-divider-hint" hidden>插入一条水平分隔线。</p>
+      <p id="component-error" role="alert" hidden></p>
+      <div class="component-dialog-actions">
+        <button id="component-cancel" type="button">取消</button>
+        <button id="component-insert" class="primary" type="submit">插入</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="context-menu" class="context-menu" hidden role="menu">
     <button data-context-action="undo">撤销</button>
@@ -339,6 +375,7 @@
   <div id="toast" class="toast" role="status"></div>
   <script src="converters.js"></script>
   <script src="guide.js"></script>
+  <script src="components.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

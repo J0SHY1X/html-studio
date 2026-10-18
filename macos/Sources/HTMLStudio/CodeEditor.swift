@@ -15,16 +15,35 @@ final class CodeEditorController: ObservableObject {
     private var lastFindKey = ""
     private var currentFindRange: NSRange?
 
+    var selectedText: String {
+        guard let textView else { return "" }
+        return (textView.string as NSString).substring(with: textView.selectedRange())
+    }
+
+    func insertHTML(_ html: String) {
+        guard let textView else { return }
+        textView.window?.makeFirstResponder(textView)
+        textView.breakUndoCoalescing()
+        textView.insertText(html, replacementRange: textView.selectedRange())
+        textView.breakUndoCoalescing()
+    }
+
     func undo() {
         guard let textView else { return }
         textView.window?.makeFirstResponder(textView)
+        let previous = textView.string
         textView.undoManager?.undo()
+        // Direct UndoManager calls can update NSTextView without notifying its
+        // SwiftUI binding. Keep preview, autosave and the next save in sync.
+        if textView.string != previous { textView.didChangeText() }
     }
 
     func redo() {
         guard let textView else { return }
         textView.window?.makeFirstResponder(textView)
+        let previous = textView.string
         textView.undoManager?.redo()
+        if textView.string != previous { textView.didChangeText() }
     }
 
     func pastePlainText() {

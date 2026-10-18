@@ -145,7 +145,7 @@ window.HTMLStudioGuideHTML = `<!doctype html>
 <body>
   <main>
     <section class="hero">
-      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.11</p>
+      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.12</p>
       <h1>从源码到所见即所得，<br>在一个窗口完成。</h1>
       <p class="lead">HTML Studio 可打开、实时预览和编辑 HTML，并导出 Markdown、Word 与 PDF，或打开 Windows 系统打印对话框。右侧页面支持中文输入法和类似 Word 的格式工具。</p>
       <span class="close-tip">本说明是独立标签页，点击标签上的 × 即可关闭</span>

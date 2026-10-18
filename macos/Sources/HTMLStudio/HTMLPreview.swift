@@ -75,8 +75,8 @@ struct HTMLPreview: NSViewRepresentable {
         view.subviews.forEach { configureScrollers(in: $0) }
     }
 
-    static func contextMenuPoint(x: Double, y: Double, in view: NSView) -> NSPoint {
-        NSPoint(x: x, y: view.isFlipped ? y : view.bounds.height - y)
+    static func contextMenuPoint(x: Double, y: Double, in view: NSView, zoom: Double = 1) -> NSPoint {
+        NSPoint(x: x * zoom, y: view.isFlipped ? y * zoom : view.bounds.height - y * zoom)
     }
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
@@ -266,7 +266,7 @@ struct HTMLPreview: NSViewRepresentable {
                 to: menu
             )
 
-            let point = HTMLPreview.contextMenuPoint(x: x, y: y, in: webView)
+            let point = HTMLPreview.contextMenuPoint(x: x, y: y, in: webView, zoom: webView.pageZoom)
             menu.popUp(positioning: nil, at: point, in: webView)
         }
 
@@ -681,10 +681,24 @@ struct HTMLPreview: NSViewRepresentable {
         },
 
         finishCommand(action) {
-          requestAnimationFrame(() => {
+          // A sheet or a background window can suspend animation frames. DOM
+          // changes must still reach the source editor and save/autosave state.
+          queueMicrotask(() => {
             this.repairSelection();
             this.notifyChange(action, true);
           });
+        },
+
+        selectedText() {
+          this.saveSelection();
+          return window.getSelection()?.toString() || '';
+        },
+
+        insertComponent(html, action) {
+          if (!this.prepareCommand()) return false;
+          const result = document.execCommand('insertHTML', false, html);
+          if (result) this.finishCommand(action || '插入组件');
+          return result;
         },
 
         exec(command, value) {

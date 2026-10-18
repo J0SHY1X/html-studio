@@ -10,10 +10,127 @@ const markdown = Array.from({ length: 31 }, (_, index) => (
   `## 目录 ${index + 1}\n\n${"长文档回归测试。".repeat(60)}\n`
 )).join("\n") + "\n| 名称 | 数量 |\n| :--- | ---: |\n| 测试 | 31 |\n";
 
+async function checkZoomAndComponents(page, assertLayout) {
+  const frame = page.frameLocator("#design-frame");
+  await frame.locator("body").click();
+  const original = await page.locator("#source-editor").inputValue();
+  const viewportWidth = await page.evaluate(() => document.querySelector("#design-frame").contentWindow.innerWidth);
+  await page.locator("#zoom-in").click();
+  await page.locator("#zoom-in").click();
+  assert.equal(await page.locator("#zoom-reset").textContent(), "120%");
+  const zoomed = await page.evaluate(() => {
+    const frame = document.querySelector("#design-frame");
+    return { width: frame.contentWindow.innerWidth, scale: frame.getBoundingClientRect().width / frame.clientWidth };
+  });
+  assert.ok(zoomed.width < viewportWidth && Math.abs(zoomed.scale - 1.2) < 0.01);
+  assert.equal(await page.locator("#source-editor").inputValue(), original, "缩放不得改动 HTML");
+  assert.ok(await page.locator("#dirty-indicator").evaluate((node) => node.classList.contains("clean")));
+  await assertLayout();
+  const contextAnchor = await page.evaluate(() => {
+    const frame = document.querySelector("#design-frame");
+    frame.contentDocument.body.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 50, clientY: 30 }));
+    const rect = frame.getBoundingClientRect();
+    return { x: rect.left + 60, y: rect.top + 36 };
+  });
+  const zoomMenu = await page.locator("#context-menu").boundingBox();
+  assert.ok(Math.abs(zoomMenu.x - contextAnchor.x) < 2);
+  assert.ok(Math.min(Math.abs(zoomMenu.y - contextAnchor.y), Math.abs(zoomMenu.y + zoomMenu.height - contextAnchor.y)) < 2);
+  await page.locator("#zoom-reset").click();
+  await page.locator("#zoom-in").click();
+  await page.locator("#zoom-in").click();
+  const control = await page.locator(".page-zoom").boundingBox();
+  const viewport = page.viewportSize();
+  assert.ok(control.x + control.width > viewport.width - 20 && control.y + control.height >= viewport.height - 3);
+  await page.locator("#zoom-out").click();
+  assert.equal(await page.locator("#zoom-reset").textContent(), "110%");
+  await page.locator("#zoom-reset").click();
+  assert.equal(await page.locator("#zoom-reset").textContent(), "100%");
+
+  await page.locator("#components-button").click();
+  await page.locator("#component-insert").click();
+  assert.ok(await page.locator("#component-error").isVisible());
+  await page.locator("#component-cancel").click();
+  assert.equal(await page.locator("#source-editor").inputValue(), original);
+  async function insert(kind, values = {}) {
+    await page.locator("#components-button").click();
+    await page.locator("#component-kind").selectOption(kind);
+    for (const name of ["title", "address", "content"]) {
+      if (values[name] !== undefined) await page.locator(`#component-${name}`).fill(values[name]);
+    }
+    await page.locator("#component-insert").click();
+    const selectors = {
+      link: "a[href^='https://example.com/']", button: "a[role=button]", text: "body", heading: "h2",
+      card: "h3", columns: "section,div", quote: "blockquote", divider: "hr", details: "details", input: "input", list: "ul"
+    };
+    await frame.locator(selectors[kind]).last().waitFor();
+    const expected = ({
+      link: "参考 &lt;文档&gt;", button: "了解更多", text: "在这里输入正文内容。", heading: "二级标题",
+      card: "卡片标题", columns: "左栏内容。", quote: "在这里输入提示或引用内容。", divider: "<hr",
+      details: "<details", input: "请输入内容", list: "<li>第一项"
+    })[kind];
+    await page.waitForFunction((expected) => document.querySelector("#source-editor").value.includes(expected), expected);
+  }
+  await insert("link", { title: '参考 <文档> & "说明"', address: "https://example.com/?a=1&b=2" });
+  assert.equal(await frame.locator('[data-html-studio-component="link"]').textContent(), '参考 <文档> & "说明"');
+  await page.locator("#undo-button").click();
+  await frame.locator('[data-html-studio-component="link"]').waitFor({ state: "detached" });
+  await page.locator("#redo-button").click();
+  await frame.locator('[data-html-studio-component="link"]').waitFor();
+  await insert("button", { title: "了解更多", address: "#details" });
+  assert.equal(await frame.locator('[data-html-studio-component="button"]').getAttribute("role"), "button");
+  await page.locator("#image-button").click();
+  await page.locator("#component-image-file").setInputFiles({
+    name: "本地图片.png", mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64")
+  });
+  await page.locator("#component-image-name").getByText("本地图片.png").waitFor();
+  await page.locator("#component-insert").click();
+  try {
+    await frame.locator('[data-html-studio-component="image"]').waitFor({ state: "attached", timeout: 5000 });
+  } catch (error) {
+    console.log("Image insertion diagnostic:", await page.evaluate(() => ({
+      html: document.querySelector("#design-frame").contentDocument.body.innerHTML,
+      error: document.querySelector("#component-error").textContent,
+      modal: document.querySelector("#component-dialog").open
+    })));
+    throw error;
+  }
+  assert.match(await frame.locator('[data-html-studio-component="image"]').getAttribute("src"), /^data:image\/png;base64,/);
+  for (const kind of ["text", "heading", "card", "columns", "quote", "divider", "details", "input", "list"]) {
+    await insert(kind);
+  }
+  assert.equal(await frame.locator('a[role="button"]').textContent(), "了解更多");
+  assert.equal(await frame.locator('img').count(), 1, "后续组件插入不应覆盖已有图片");
+  assert.equal(await frame.locator('ul li').count(), 3);
+  assert.equal(await frame.locator('details summary').textContent(), "点击展开详情");
+  await page.locator("#zoom-in").click();
+  await page.locator("#save-button").click();
+  const saved = await page.evaluate(() => window.testSavedHTML);
+  assert.ok(saved.includes("data:image/png;base64,"));
+  assert.ok(saved.includes('data-html-studio-component="card"'));
+  assert.ok(!saved.includes("page-scale") && !saved.includes("transform: scale"));
+  await assertLayout();
+
+  await page.locator('[data-mode="source"]').click();
+  assert.ok(await page.locator("#zoom-in").isDisabled());
+  const source = '<html><body><p>正文</p></body></html>';
+  await page.locator("#source-editor").fill(source);
+  await page.locator("#source-editor").evaluate((node) => node.setSelectionRange(node.value.indexOf("</body>"), node.value.indexOf("</body>")));
+  await page.locator("#components-button").click();
+  await page.locator("#component-kind").selectOption("heading");
+  await page.locator("#component-title").fill("源码中插入标题");
+  await page.locator("#component-insert").click();
+  assert.match(await page.locator("#source-editor").inputValue(), /<p>正文<\/p><h2 [^>]+>源码中插入标题<\/h2><\/body>/);
+  await page.locator("#undo-button").click();
+  assert.equal(await page.locator("#source-editor").inputValue(), source);
+  await page.locator('[data-mode="split"]').click();
+  assert.equal(await page.locator("#zoom-reset").textContent(), "110%");
+}
+
 async function main() {
   const server = http.createServer(async (request, response) => {
     const name = path.basename(new URL(request.url, "http://localhost").pathname) || "index.html";
-    if (!["index.html", "styles.css", "guide.js", "converters.js", "renderer.js"].includes(name)) {
+    if (!["index.html", "styles.css", "guide.js", "converters.js", "components.js", "renderer.js"].includes(name)) {
       response.writeHead(404).end();
       return;
     }
@@ -104,6 +221,7 @@ async function main() {
       await page.locator("#new-button").click();
       await page.waitForFunction(() => document.querySelector("#design-frame").contentDocument?.body?.textContent.trim() === "");
       await assertLayout();
+      await checkZoomAndComponents(page, () => assertLayout());
       assert.deepEqual(errors, []);
       await context.close();
 
@@ -125,7 +243,7 @@ async function main() {
       await assertLayout(normalPage);
       await normalContext.close();
     }
-    console.log("HTML Studio workspace UI regression tests passed (31 headings, two window sizes, file launch, blank page, menus and Markdown save).");
+    console.log("HTML Studio workspace UI regression tests passed (31 headings, two window sizes, zoom, 12 components, embedded images, source undo, file launch and save).");
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

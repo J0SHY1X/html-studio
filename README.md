@@ -6,7 +6,19 @@
 
 A local-first HTML source and visual editor for macOS and Windows, with Markdown, DOCX and PDF export.
 
-[下载 v0.3.11](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.11) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+[下载 v0.3.12](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.12) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+
+## 0.3.12 更新
+
+- Mac 恢复独立 HTML 草稿时避免多余的目录访问授权，防止启动被系统文件访问阻塞。
+
+- Mac 源码撤销/重做后会立即同步预览、草稿与保存内容。
+
+- 右下角新增页面缩放控件：−、百分比、＋；支持 50%–200%，点击百分比恢复 100%。缩放只作用于页面预览，不改动 HTML、导出或打印尺寸，每个标签页独立保持显示比例。
+- 顶部新增“组件”入口，提供链接、按钮、图片、文本区块、标题、卡片、两栏布局、提示/引用、分隔线、折叠详情、输入框和项目列表共 12 种组件。
+- 在组件面板填写文字、链接和说明后，插入到当前页面选区或源码光标处，支持撤销/重做。链接按钮填写地址后可以跳转；未填写地址时生成普通按钮。
+- 图片支持网址、相对路径和本地文件；本地图片嵌入 HTML，保存后无需另行携带图片文件。
+- 修复页面放大或缩小后右键菜单的坐标换算；Mac 编辑命令及时同步源码与草稿，不再依赖窗口动画帧。
 
 ## 0.3.11 更新
 

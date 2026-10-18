@@ -115,6 +115,13 @@ const elements = {
   historyButton: document.querySelector("#history-button")
 };
 
+const componentDialog = document.querySelector("#component-dialog");
+const componentFields = Object.fromEntries([
+  "kind", "title", "address", "content", "new-window", "error", "image-file", "image-name"
+].map((name) => [name, document.querySelector(`#component-${name}`)]));
+let componentContext = null;
+let embeddedComponentImage = null;
+
 const workspaceState = {
   documents: [],
   recoveryDocuments: [],
@@ -152,6 +159,7 @@ function createDocument(values = {}) {
       ? values.savedHTML
       : (dirty ? "" : html),
     editEnabled: values.editEnabled !== false,
+    zoomPercent: Number.isFinite(values.zoomPercent) ? Math.min(200, Math.max(50, values.zoomPercent)) : 100,
     kind: values.kind === "guide" ? "guide" : "document",
     isComposing: false,
     compositionAction: null,
@@ -242,7 +250,8 @@ function persistWorkspace() {
       baseURL: documentValue.baseURL,
       dirty: documentValue.dirty,
       savedHTML: documentValue.savedHTML,
-      editEnabled: documentValue.editEnabled
+      editEnabled: documentValue.editEnabled,
+      zoomPercent: documentValue.zoomPercent
     }))
   };
   try {
@@ -301,10 +310,12 @@ function updateDocumentControls() {
   elements.exportPDFButton.disabled = guide;
   elements.printButton.disabled = guide;
   elements.historyButton.disabled = guide;
+  document.querySelector("#components-button").disabled = guide;
   document.querySelectorAll("[data-mode]").forEach((button) => {
     button.disabled = guide;
   });
   applyWorkspaceMode(guide ? "design" : workspaceState.mode);
+  updatePageZoom();
 }
 
 function updateStats() {
@@ -420,6 +431,72 @@ function refreshActiveDocument() {
       setFindStatus();
     }
   }
+}
+
+function updatePageZoom() {
+  const percent = state.zoomPercent || 100;
+  elements.frame.style.setProperty("--page-scale", percent / 100);
+  document.querySelector("#zoom-reset").textContent = `${percent}%`;
+  const sourceOnly = workspaceState.mode === "source" && !isGuide();
+  document.querySelector("#zoom-out").disabled = sourceOnly || percent <= 50;
+  document.querySelector("#zoom-in").disabled = sourceOnly || percent >= 200;
+  document.querySelector("#zoom-reset").disabled = sourceOnly;
+}
+
+function setPageZoom(percent) {
+  if (!activeDocument()) return;
+  state.zoomPercent = Math.min(200, Math.max(50, percent));
+  updatePageZoom();
+  hideContextMenu();
+  persistWorkspace();
+}
+
+function configureComponentForm() {
+  const item = window.HTMLStudioComponents.catalog.find((entry) => entry.id === componentFields.kind.value);
+  const selected = componentContext?.selectedText || "";
+  componentFields.title.value = selected || item.title || "";
+  componentFields.content.value = selected || item.content || "";
+  componentFields.address.value = "";
+  componentFields.address.hidden = false;
+  componentFields["image-name"].textContent = "";
+  componentFields["image-file"].value = "";
+  componentFields.error.hidden = true;
+  embeddedComponentImage = null;
+  document.querySelector("#component-image-clear").hidden = true;
+  document.querySelector("#component-title-row").hidden = item.title === undefined;
+  document.querySelector("#component-content-row").hidden = item.content === undefined;
+  document.querySelector("#component-address-row").hidden = !item.address;
+  document.querySelector("#component-image-tools").hidden = item.id !== "image";
+  document.querySelector("#component-new-window-row").hidden = !["link", "button"].includes(item.id);
+  document.querySelector("#component-button-hint").hidden = item.id !== "button";
+  document.querySelector("#component-divider-hint").hidden = item.id !== "divider";
+  document.querySelector("#component-title-label").textContent = item.id === "image" ? "替代文字" : "文字 / 标题";
+  document.querySelector("#component-address-label").textContent = item.id === "image" ? "图片地址或相对路径" : "链接地址";
+  document.querySelector("#component-content-label").textContent = ({
+    image: "图片说明（可选）", columns: "两栏内容（第一行为左栏，其余为右栏）",
+    input: "输入提示", list: "列表内容（每行一项）"
+  })[item.id] || "内容";
+}
+
+function openComponentDialog(kind = "link", surface = null) {
+  if (isGuide() || state.isComposing) return;
+  const target = surface || (workspaceState.mode === "source" ? "source" :
+    workspaceState.mode === "design" ? "design" : workspaceState.activeEditor);
+  if (target === "design" && !state.editEnabled) {
+    showToast("请先启用“直接编辑”。");
+    return;
+  }
+  saveSelection();
+  componentContext = {
+    id: state.id, surface: target,
+    start: elements.source.selectionStart, end: elements.source.selectionEnd,
+    selectedText: target === "source"
+      ? elements.source.value.slice(elements.source.selectionStart, elements.source.selectionEnd)
+      : designWindow()?.getSelection()?.toString() || ""
+  };
+  componentFields.kind.value = kind;
+  configureComponentForm();
+  componentDialog.showModal();
 }
 
 function selectDocument(documentValue) {
@@ -1793,6 +1870,7 @@ function applyWorkspaceMode(mode) {
   document.querySelectorAll("[data-mode]").forEach((button) => {
     button.classList.toggle("active", button.dataset.mode === mode);
   });
+  updatePageZoom();
 }
 
 function setWorkspaceMode(mode) {
@@ -2036,13 +2114,13 @@ function activateEditorSurface(surface) {
   }
 }
 
-function replaceSourceRange(start, end, replacement, action) {
+function replaceSourceRange(start, end, replacement, action, refocusFind = true) {
   elements.source.focus({ preventScroll: true });
   elements.source.setSelectionRange(start, end);
   const inserted = document.execCommand("insertText", false, replacement);
   if (!inserted) elements.source.setRangeText(replacement, start, end, "end");
   syncSourceEditor(action);
-  elements.findInput.focus({ preventScroll: true });
+  if (refocusFind) elements.findInput.focus({ preventScroll: true });
 }
 
 function replaceCurrentMatch() {
@@ -2237,7 +2315,8 @@ elements.frame.addEventListener("load", () => {
     saveSelection();
     markActivePage(event.target);
     const bounds = elements.frame.getBoundingClientRect();
-    showContextMenu(bounds.left + event.clientX, bounds.top + event.clientY, "design");
+    const scale = bounds.width / elements.frame.clientWidth;
+    showContextMenu(bounds.left + event.clientX * scale, bounds.top + event.clientY * scale, "design");
   }, true);
   frameDocument.addEventListener("click", (event) => {
     if (isGuide()) return;
@@ -2268,14 +2347,84 @@ document.querySelector("#foreground-color").addEventListener("change", (event) =
 document.querySelector("#highlight-color").addEventListener("change", (event) => {
   executeCommand("hiliteColor", event.target.value);
 });
-document.querySelector("#link-button").addEventListener("click", () => {
-  const value = window.prompt("输入链接地址：", "https://");
-  if (value) executeCommand("createLink", value);
+window.HTMLStudioComponents.catalog.forEach((item) => {
+  const option = document.createElement("option");
+  option.value = item.id;
+  option.textContent = item.name;
+  componentFields.kind.appendChild(option);
 });
-document.querySelector("#image-button").addEventListener("click", () => {
-  const value = window.prompt("输入图片 URL 或相对路径：", "");
-  if (value) executeCommand("insertImage", value);
+document.querySelector("#components-button").addEventListener("click", () => openComponentDialog());
+document.querySelector("#link-button").addEventListener("click", () => openComponentDialog("link", "design"));
+document.querySelector("#image-button").addEventListener("click", () => openComponentDialog("image", "design"));
+["components-button", "link-button", "image-button", "zoom-in", "zoom-out", "zoom-reset"].forEach((id) => {
+  document.getElementById(id).addEventListener("mousedown", (event) => event.preventDefault());
 });
+componentFields.kind.addEventListener("change", configureComponentForm);
+document.querySelector("#component-cancel").addEventListener("click", () => componentDialog.close());
+componentDialog.addEventListener("close", () => { componentContext = null; embeddedComponentImage = null; });
+document.querySelector("#component-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const context = componentContext;
+  if (!context || context.id !== state.id || isGuide()) return;
+  try {
+    const kind = componentFields.kind.value;
+    const html = window.HTMLStudioComponents.render(kind, {
+      title: componentFields.title.value, address: embeddedComponentImage || componentFields.address.value,
+      content: componentFields.content.value, newWindow: componentFields["new-window"].checked
+    });
+    const action = `插入${window.HTMLStudioComponents.catalog.find((item) => item.id === kind).name}组件`;
+    componentDialog.close();
+    workspaceState.activeEditor = context.surface;
+    if (context.surface === "source") {
+      replaceSourceRange(context.start, context.end, html, action, false);
+    } else {
+      executeCommand("insertHTML", html, action);
+    }
+  } catch (error) {
+    componentFields.error.textContent = error.message;
+    componentFields.error.hidden = false;
+  }
+});
+document.querySelector("#component-image-choose").addEventListener("click", () => componentFields["image-file"].click());
+document.querySelector("#component-image-clear").addEventListener("click", () => {
+  embeddedComponentImage = null;
+  componentFields.address.hidden = false;
+  componentFields["image-name"].textContent = "";
+  componentFields["image-file"].value = "";
+  document.querySelector("#component-image-clear").hidden = true;
+});
+componentFields["image-file"].addEventListener("change", () => {
+  const file = componentFields["image-file"].files[0];
+  if (!file) return;
+  const context = componentContext;
+  const reader = new FileReader();
+  const fail = () => {
+    if (!componentDialog.open || context !== componentContext) return;
+    componentFields.error.textContent = "无法读取此图片，请选择 PNG、JPEG、GIF、WebP 或 SVG 图片。";
+    componentFields.error.hidden = false;
+  };
+  reader.onerror = fail;
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = fail;
+    image.onload = () => {
+      if (!componentDialog.open || context !== componentContext || componentFields.kind.value !== "image") return;
+      embeddedComponentImage = String(reader.result);
+      componentFields.address.hidden = true;
+      componentFields["image-name"].textContent = file.name;
+      document.querySelector("#component-image-clear").hidden = false;
+      if (!componentFields.title.value || componentFields.title.value === "图片说明") {
+        componentFields.title.value = file.name.replace(/\.[^.]+$/, "");
+      }
+      componentFields.error.hidden = true;
+    };
+    image.src = String(reader.result);
+  };
+  reader.readAsDataURL(file);
+});
+document.querySelector("#zoom-in").addEventListener("click", () => setPageZoom(state.zoomPercent + 10));
+document.querySelector("#zoom-out").addEventListener("click", () => setPageZoom(state.zoomPercent - 10));
+document.querySelector("#zoom-reset").addEventListener("click", () => setPageZoom(100));
 
 document.querySelectorAll("[data-table-insert]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -2414,6 +2563,10 @@ window.addEventListener("blur", hideContextMenu);
 window.addEventListener("resize", hideContextMenu);
 
 window.htmlStudioAPI.onMenuCommand((command) => {
+  if (componentDialog.open) {
+    if (command === "undo" || command === "redo") document.execCommand(command);
+    return;
+  }
   const handlers = {
     new: newDocument,
     open: openDocument,
@@ -2443,6 +2596,7 @@ window.htmlStudioAPI.onMenuCommand((command) => {
 window.addEventListener("beforeunload", persistWorkspace);
 
 window.addEventListener("keydown", (event) => {
+  if (componentDialog.open) return;
   if (event.key === "Escape" && !elements.findBar.hidden) {
     event.preventDefault();
     closeFindBar();

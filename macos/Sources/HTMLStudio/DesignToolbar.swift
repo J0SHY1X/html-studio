@@ -4,6 +4,7 @@ import SwiftUI
 struct DesignToolbar: View {
     @ObservedObject var controller: DesignEditorController
     @Binding var isEditable: Bool
+    let onInsertComponent: (HTMLComponentKind) -> Void
 
     @State private var selectedFont = "PingFang SC"
     @State private var selectedSize = 16
@@ -163,7 +164,7 @@ struct DesignToolbar: View {
                     groupDivider
 
                     Button {
-                        insertLink()
+                        onInsertComponent(.link)
                     } label: {
                         Image(systemName: "link")
                     }
@@ -177,11 +178,11 @@ struct DesignToolbar: View {
                     .help("移除链接")
 
                     Button {
-                        insertImage()
+                        onInsertComponent(.image)
                     } label: {
                         Image(systemName: "photo")
                     }
-                    .help("插入网络图片")
+                    .help("插入图片（网址或本地图片）")
 
                     Menu {
                         Button("复制当前页到后面") {
@@ -348,48 +349,6 @@ struct DesignToolbar: View {
         .help(help)
     }
 
-    private func insertLink() {
-        guard let value = requestText(
-            title: "插入链接",
-            message: "输入链接地址：",
-            placeholder: "https://example.com"
-        ) else {
-            return
-        }
-        controller.execute("createLink", value: value)
-    }
-
-    private func insertImage() {
-        guard let value = requestText(
-            title: "插入图片",
-            message: "输入图片 URL 或相对路径：",
-            placeholder: "images/example.png"
-        ) else {
-            return
-        }
-        controller.execute("insertImage", value: value)
-    }
-
-    private func requestText(
-        title: String,
-        message: String,
-        placeholder: String
-    ) -> String? {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.addButton(withTitle: "插入")
-        alert.addButton(withTitle: "取消")
-
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
-        field.placeholderString = placeholder
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
-    }
 }
 
 private extension Color {

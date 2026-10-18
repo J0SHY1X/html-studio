@@ -1,6 +1,6 @@
 {
   "name": "html-studio-windows",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "description": "HTML source and visual editor for Windows",
   "main": "src/main.js",
   "author": "Codex",
@@ -8,7 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node tests/smoke-test.js && node tests/document-regression-test.js && node tests/main-process-test.js && node tests/pdf-html-test.js",
+    "test": "node tests/smoke-test.js && node tests/document-regression-test.js && node tests/component-test.js && node tests/main-process-test.js && node tests/pdf-html-test.js",
     "test:ui": "node tests/workspace-ui-test.js",
     "pack:win": "electron-builder --win dir --x64",
     "portable:folder": "node Tools/build-portable-folder.js",

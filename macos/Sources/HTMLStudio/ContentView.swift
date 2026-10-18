@@ -53,6 +53,10 @@ private struct DocumentEditorView: View {
     @State private var replacementText = ""
     @State private var matchCase = false
     @State private var findStatusText = "输入查找内容"
+    @State private var insertionKind: HTMLComponentKind?
+    @State private var componentSelection = ""
+    @State private var componentSurface: ActiveEditorSurface = .design
+    @State private var componentDocumentID: UUID?
     @FocusState private var findFieldFocused: Bool
 
     private let conversionService = ConversionService.shared
@@ -65,6 +69,16 @@ private struct DocumentEditorView: View {
         editorWithCommands
             .sheet(isPresented: $showHistory) {
                 HistoryView(document: document)
+            }
+            .sheet(item: $insertionKind) { kind in
+                ComponentInsertView(kind: kind, selectedText: componentSelection) { html, action in
+                    guard componentDocumentID == document.id else { return }
+                    if componentSurface == .source {
+                        codeEditorController.insertHTML(html)
+                    } else {
+                        document.designController.insertComponent(html, action: action)
+                    }
+                }
             }
             .alert("HTML Studio", isPresented: $showError) {
                 Button("好", role: .cancel) {}
@@ -248,6 +262,11 @@ private struct DocumentEditorView: View {
                 Label("重做", systemImage: "arrow.uturn.forward")
             }
             .help("重做当前编辑区域的下一步操作（⇧⌘Z）")
+
+            Button { openComponent(.link) } label: {
+                Label("组件", systemImage: "plus.square.on.square")
+            }
+            .help("插入链接、按钮、图片、卡片等常用组件")
 
             Button {
                 openFindBar(replacing: false)
@@ -568,7 +587,8 @@ private struct DocumentEditorView: View {
 
             DesignToolbar(
                 controller: document.designController,
-                isEditable: $designEditing
+                isEditable: $designEditing,
+                onInsertComponent: { openComponent($0, surface: .design) }
             )
 
             Divider()
@@ -601,6 +621,22 @@ private struct DocumentEditorView: View {
         .padding(.horizontal, 10)
         .frame(height: 30)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func openComponent(_ kind: HTMLComponentKind, surface: ActiveEditorSurface? = nil) {
+        let target = surface ?? (mode == .editor ? .source : (mode == .preview ? .design : activeEditorSurface))
+        guard target == .source || (designEditing && document.designController.isReady) else { return }
+        componentSurface = target
+        componentDocumentID = document.id
+        if target == .source {
+            componentSelection = codeEditorController.selectedText
+            insertionKind = kind
+        } else {
+            document.designController.selectedText { selection in
+                componentSelection = selection
+                insertionKind = kind
+            }
+        }
     }
 
     private func performUndo() {
@@ -751,6 +787,9 @@ private struct DocumentEditorView: View {
             Text("\(document.lineCount) 行")
             Text("\(document.html.count) 字符")
             Text("UTF-8")
+            Divider().frame(height: 14)
+            PageZoomControls(controller: document.designController)
+                .disabled(mode == .editor)
         }
         .font(.caption2)
         .foregroundStyle(.secondary)

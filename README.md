@@ -6,7 +6,12 @@
 
 A local-first HTML source and visual editor for macOS and Windows, with Markdown, DOCX and PDF export.
 
-[下载 v0.3.13](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.13) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+[下载 v0.3.14](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.14) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+
+## 0.3.14 更新
+
+- 修复 Mac 顶部“源码／分屏／预览”切换控件旁的“工作区”标签被挤压为“工”和省略号的问题，隐藏多余标签，保留三个模式选项。
+- Windows 下载包同步更新为 0.3.14，功能延续 0.3.13。
 
 ## 0.3.13 更新
 

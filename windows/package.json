@@ -1,6 +1,6 @@
 {
   "name": "html-studio-windows",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "HTML source and visual editor for Windows",
   "main": "src/main.js",
   "author": "Codex",

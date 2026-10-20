@@ -293,6 +293,7 @@ private struct DocumentEditorView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .frame(width: 180)
 
             Spacer()

@@ -2,6 +2,11 @@
 
 HTML Studio 是一个使用 Swift、SwiftUI、AppKit 与 WebKit 构建的原生 macOS HTML 工作台。它面向需要快速查看、编辑、实时预览、保存和转换 HTML 文件的用户。
 
+## 0.3.14 更新
+
+- 修复 Mac 顶部“源码／分屏／预览”切换控件旁的“工作区”标签被挤压为“工”和省略号的问题，隐藏多余标签，保留三个模式选项。
+- Windows 下载包同步更新为 0.3.14，功能延续 0.3.13。
+
 ## 0.3.13 更新
 
 - 左侧大纲支持向左折叠，顶部“大纲”按钮可随时重新展开，编辑区同步扩展。
@@ -130,7 +135,7 @@ chmod +x scripts/build_app.sh
 
 ```text
 dist/HTML Studio.app
-dist/HTML Studio-macOS-arm64-0.3.13.zip
+dist/HTML Studio-macOS-arm64-0.3.14.zip
 ```
 
 也可以直接开发运行：

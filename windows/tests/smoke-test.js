@@ -15,6 +15,7 @@ const requiredFiles = [
   "src/renderer/renderer.js",
   "src/renderer/converters.js",
   "src/renderer/components.js",
+  "src/renderer/annotations.js",
   "Tools/build-windows.js",
   "Tools/build-portable-folder.js",
   "build/icon.ico",
@@ -31,7 +32,7 @@ for (const relativePath of requiredFiles) {
 const packageJSON = JSON.parse(
   fs.readFileSync(path.join(root, "package.json"), "utf8")
 );
-assert.equal(packageJSON.version, "0.3.12");
+assert.equal(packageJSON.version, "0.3.13");
 assert.equal(packageJSON.build.win.target[0].target, "nsis");
 assert.match(packageJSON.build.nsis.artifactName, /Setup/);
 assert.match(packageJSON.build.portable.artifactName, /Portable/);

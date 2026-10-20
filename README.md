@@ -6,7 +6,15 @@
 
 A local-first HTML source and visual editor for macOS and Windows, with Markdown, DOCX and PDF export.
 
-[下载 v0.3.12](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.12) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+[下载 v0.3.13](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.13) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+
+## 0.3.13 更新
+
+- 左侧大纲支持向左折叠，顶部“大纲”按钮可随时重新展开，编辑区同步扩展。
+- 新增“批注”面板：在可视化页面选择文字，或将光标置于段落中，点击“添加批注”；支持定位与删除。
+- 批注随 HTML 保存，重新打开仍可读取；“批注”按钮同时控制面板、文字高亮和悬浮提示的显示，隐藏不会删除批注。
+- 应用启动默认打开空白文档，不再自动带入上次文件。未保存草稿保留，仅在点击“恢复未保存草稿”后载入。
+- PC 顶部“转换”改为点击展开的纵向下拉菜单，提供 Markdown、Word、PDF；支持 Esc 关闭、方向键导航，小窗口仍可使用。
 
 ## 0.3.12 更新
 
@@ -34,7 +42,7 @@ A local-first HTML source and visual editor for macOS and Windows, with Markdown
 - 右侧预览始终显示可拖拽的纵向滚动条，并支持修改当前页面或光标所在表格的底色。
 - 保存 HTML，导出 Markdown、DOCX、分页 PDF，以及系统打印。
 - 本地自动草稿、修改日志、完整 HTML 快照和历史恢复。
-- Windows 启动时显示可关闭的使用说明标签页。
+- Windows 帮助菜单可打开使用说明，启动默认显示空白文档。
 
 本项目包含两个独立实现，不是同一个跨平台二进制：
 

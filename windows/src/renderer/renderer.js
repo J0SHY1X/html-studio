@@ -787,6 +787,7 @@ function captureDesignHTML(action = "编辑可视化页面") {
   const previousCount = documentValue.html.length;
   saveSelection();
   const clone = frameDocument.documentElement.cloneNode(true);
+  window.HTMLStudioAnnotations.create(frameDocument).prepareClone(clone);
   clone.querySelectorAll("[data-html-studio-ui]").forEach((node) => node.remove());
   clone.querySelectorAll("[data-html-studio-active-page]").forEach((node) => {
     node.removeAttribute("data-html-studio-active-page");
@@ -801,6 +802,7 @@ function captureDesignHTML(action = "编辑可视化页面") {
   elements.source.value = documentValue.html;
   updateStats();
   updateOutline();
+  renderComments();
   setDirty(true, documentValue);
   scheduleHistory(
     documentValue,
@@ -2217,6 +2219,7 @@ elements.frame.addEventListener("load", () => {
   const frameDocument = designDocument();
   if (!frameDocument?.body) return;
   setDesignEditable();
+  renderComments();
   if (!elements.findBar.hidden && workspaceState.activeEditor === "design" &&
       elements.findInput.value) {
     performFind(false, true);
@@ -2563,7 +2566,7 @@ window.addEventListener("blur", hideContextMenu);
 window.addEventListener("resize", hideContextMenu);
 
 window.htmlStudioAPI.onMenuCommand((command) => {
-  if (componentDialog.open) {
+  if (componentDialog.open || document.querySelector("#comment-dialog").open) {
     if (command === "undo" || command === "redo") document.execCommand(command);
     return;
   }
@@ -2596,7 +2599,7 @@ window.htmlStudioAPI.onMenuCommand((command) => {
 window.addEventListener("beforeunload", persistWorkspace);
 
 window.addEventListener("keydown", (event) => {
-  if (componentDialog.open) return;
+  if (componentDialog.open || document.querySelector("#comment-dialog").open) return;
   if (event.key === "Escape" && !elements.findBar.hidden) {
     event.preventDefault();
     closeFindBar();
@@ -2642,51 +2645,107 @@ function restoreWorkspace(externalLaunch = false) {
   } catch {
     restored = null;
   }
-  if (externalLaunch) {
-    workspaceState.recoveryDocuments = Array.isArray(restored?.documents)
-      ? restored.documents.filter((item) => item.dirty).map(createDocument)
-      : [];
-    workspaceState.documents = [];
-    workspaceState.selectedDocumentId = null;
-    return;
-  }
-  if (Array.isArray(restored?.documents) && restored.documents.length) {
-    const documents = restored.documents.map(createDocument);
-    workspaceState.lastUserDocumentId = documents.some(
-      (documentValue) => documentValue.id === restored.selectedDocumentId
-    )
-      ? restored.selectedDocumentId
-      : documents[0].id;
-    const guide = createGuideDocument();
-    workspaceState.documents = [guide, ...documents];
-    workspaceState.selectedDocumentId = guide.id;
-    showToast("已恢复上次的标签页和自动草稿。");
-    return;
-  }
+  // Keep recovery data, but never open a previous document without a user action.
+  let legacy = null;
+  try { legacy = JSON.parse(localStorage.getItem("htmlStudioWindowsDraft") || "null"); } catch {}
+  const drafts = Array.isArray(restored?.documents) ? restored.documents : [];
+  if (legacy?.dirty && typeof legacy.html === "string" && !drafts.some(item=>item.html===legacy.html)) drafts.push(legacy);
+  workspaceState.recoveryDocuments = drafts.filter(item => item.dirty).map(createDocument);
+  document.querySelector("#recover-drafts").hidden = !workspaceState.recoveryDocuments.length;
+  workspaceState.documents = externalLaunch ? [] : [createDocument()];
+  workspaceState.selectedDocumentId = workspaceState.documents[0]?.id || null;
+  workspaceState.lastUserDocumentId = workspaceState.selectedDocumentId;
 
-  let legacyDraft = null;
-  try {
-    legacyDraft = JSON.parse(
-      localStorage.getItem("htmlStudioWindowsDraft") || "null"
-    );
-  } catch {
-    legacyDraft = null;
-  }
-  const initial = legacyDraft?.dirty && typeof legacyDraft.html === "string"
-    ? createDocument({
-      html: legacyDraft.html,
-      filePath: legacyDraft.filePath,
-      baseURL: legacyDraft.baseURL,
-      dirty: true,
-      savedHTML: ""
-    })
-    : createDocument();
-  const guide = createGuideDocument();
-  workspaceState.documents = [guide, initial];
-  workspaceState.selectedDocumentId = guide.id;
-  workspaceState.lastUserDocumentId = initial.id;
-  localStorage.removeItem("htmlStudioWindowsDraft");
 }
+
+const commentsPanel = document.querySelector("#comments-panel");
+const commentDialog = document.querySelector("#comment-dialog");
+let commentsVisible = false;
+let commentContext = null;
+document.querySelector(".app-shell").append(commentsPanel);
+function annotationEngine() {
+  const doc = designDocument();
+  return doc?.body ? window.HTMLStudioAnnotations.create(doc) : null;
+}
+function renderComments() {
+  const engine = annotationEngine();
+  if (!engine) return;
+  engine.visible(commentsVisible);
+  const list = document.querySelector("#comment-list");list.replaceChildren();
+  const items = engine.list();
+  if (!items.length) {const p=document.createElement("p");p.textContent="暂无批注";list.append(p);}
+  for (const item of items) {
+    const card=document.createElement("div");card.className="comment-card";
+    const locate=document.createElement("button");locate.className="comment-locate";locate.textContent=item.text.slice(0,100);locate.title="定位到批注文字";
+    locate.onclick=()=>engine.reveal(item.id);
+    const note=document.createElement("p");note.textContent=item.note;
+    const remove=document.createElement("button");remove.textContent="删除批注";remove.disabled=isGuide() || !state.editEnabled;
+    remove.onclick=()=>{engine.remove(item.id);captureDesignHTML("删除批注");renderComments();};
+    card.append(locate,note,remove);list.append(card);
+  }
+  document.querySelector("#comment-add").disabled=isGuide() || !state.editEnabled;
+}
+function showComments(show) {
+  commentsVisible=show;commentsPanel.hidden=!show;
+  document.body.classList.toggle("comments-open",show);
+  document.querySelector("#comments-toggle").setAttribute("aria-pressed",String(show));
+  renderComments();
+}
+function toggleOutline(show) {
+  document.body.classList.toggle("outline-collapsed",!show);
+  const button=document.querySelector("#toggle-sidebar");
+  button.textContent=show ? "◀ 大纲" : "▶ 大纲";
+  button.title=show ? "向左折叠大纲" : "展开大纲";
+  button.setAttribute("aria-expanded",String(show));
+}
+document.querySelector("#toggle-sidebar").onclick=()=>toggleOutline(document.body.classList.contains("outline-collapsed"));
+document.querySelector("#collapse-sidebar").onclick=()=>toggleOutline(false);
+document.querySelector("#comments-toggle").onclick=()=>showComments(!commentsVisible);
+document.querySelector("#comments-close").onclick=()=>showComments(false);
+document.querySelector("#comment-add").addEventListener("mousedown",event=>event.preventDefault());
+document.querySelector("#comment-add").onclick=()=>{
+  if (isGuide() || !state.editEnabled || state.isComposing) return;
+  restoreSelection();
+  const range=annotationEngine()?.target();
+  if (!range) {showToast("请先在页面中选择文字，或点击需要批注的段落。");return;}
+  commentContext={id:state.id,range};
+  document.querySelector("#comment-quote").textContent=range.toString().slice(0,240);
+  document.querySelector("#comment-note").value="";
+  document.querySelector("#comment-error").hidden=true;
+  commentDialog.showModal();document.querySelector("#comment-note").focus();
+};
+document.querySelector("#comment-cancel").onclick=()=>commentDialog.close();
+commentDialog.addEventListener("close",()=>{commentContext=null;});
+document.querySelector("#comment-form").onsubmit=event=>{
+  event.preventDefault();
+  if (commentContext?.id!==state.id) return;
+  const result=annotationEngine().add(commentContext.range,document.querySelector("#comment-note").value);
+  if (!result) {const error=document.querySelector("#comment-error");error.textContent="请选择尚未批注的文字或段落，并填写批注内容。";error.hidden=false;return;}
+  commentDialog.close();workspaceState.activeEditor="design";captureDesignHTML("添加批注");showComments(true);
+};
+const conversionMenu=document.querySelector("#conversion-menu");
+const conversionToggle=document.querySelector("#conversion-toggle");
+function setConversionMenu(show) {
+  conversionMenu.hidden=!show;conversionToggle.setAttribute("aria-expanded",String(show));
+}
+conversionToggle.onclick=()=>setConversionMenu(conversionMenu.hidden);
+conversionMenu.addEventListener("click",event=>{if(event.target.closest("button"))setConversionMenu(false);});
+document.addEventListener("click",event=>{if(!event.target.closest(".conversion-dropdown"))setConversionMenu(false);});
+document.addEventListener("keydown",event=>{
+  if(event.key==="Escape" && !conversionMenu.hidden){setConversionMenu(false);conversionToggle.focus();}
+  if(event.key==="ArrowDown" && event.target===conversionToggle){event.preventDefault();setConversionMenu(true);conversionMenu.querySelector("button").focus();}
+  if(event.target.closest("#conversion-menu") && ["ArrowDown","ArrowUp"].includes(event.key)) {
+    event.preventDefault();const buttons=[...conversionMenu.querySelectorAll("button")];buttons[(buttons.indexOf(event.target)+(event.key==="ArrowDown"?1:buttons.length-1))%buttons.length].focus();
+  }
+});
+document.querySelector("#recover-drafts").onclick=async()=>{
+  for(const draft of workspaceState.recoveryDocuments) {
+    if(!workspaceState.documents.some(item=>item.id===draft.id))workspaceState.documents.push(draft);
+  }
+  const restored=workspaceState.recoveryDocuments.at(-1);
+  workspaceState.recoveryDocuments=[];document.querySelector("#recover-drafts").hidden=true;
+  if(restored){selectDocument(restored);renderTabs();persistWorkspace();}
+};
 
 let workspaceInitialized = false;
 let externalOpenQueue = Promise.resolve();

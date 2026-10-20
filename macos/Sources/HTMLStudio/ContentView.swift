@@ -44,6 +44,7 @@ private struct DocumentEditorView: View {
     @State private var showSidebar = true
     @State private var showError = false
     @State private var showHistory = false
+    @State private var showComments = false
     @State private var designEditing = true
     @State private var activeEditorSurface: ActiveEditorSurface = .design
     @State private var isPreparingPrint = false
@@ -167,11 +168,6 @@ private struct DocumentEditorView: View {
                     pending.forEach { open($0, fromExternalRequest: true) }
                 }
             }
-            .onReceive(FileOpenRequests.shared.$didFinishLaunching) { finished in
-                if finished && !FileOpenRequests.shared.launchedWithFiles {
-                    workspace.restoreStartupDraft()
-                }
-            }
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocument)) { _ in
                 _ = save(document)
             }
@@ -199,7 +195,11 @@ private struct DocumentEditorView: View {
                 }
 
                 workspaceView
-                    .frame(minWidth: 560)
+                    .frame(minWidth: 360)
+                if showComments {
+                    CommentPanel(controller: document.designController, isEditable: designEditing)
+                        .frame(minWidth: 210, idealWidth: 250, maxWidth: 300)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .layoutPriority(1)
@@ -209,6 +209,9 @@ private struct DocumentEditorView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle(document.displayName + (document.isDirty ? " — 已修改" : ""))
+        .onChange(of: document.id) { _ in
+            document.designController.setCommentsVisible(showComments)
+        }
         .onChange(of: document.previewRevision) { _ in
             document.designController.scheduleHTMLLoad(
                 document.html,
@@ -227,9 +230,10 @@ private struct DocumentEditorView: View {
                     showSidebar.toggle()
                 }
             } label: {
-                Image(systemName: "sidebar.left")
+                Image(systemName: showSidebar ? "sidebar.left" : "sidebar.leading")
             }
-            .help("显示或隐藏侧边栏")
+            .accessibilityLabel(showSidebar ? "向左折叠大纲" : "展开大纲")
+            .help(showSidebar ? "向左折叠大纲" : "展开大纲")
 
             Divider()
                 .frame(height: 20)
@@ -275,6 +279,12 @@ private struct DocumentEditorView: View {
             }
             .help("在当前编辑区域查找（⌘F）")
 
+            Button {
+                showComments.toggle()
+                document.designController.setCommentsVisible(showComments)
+            } label: { Label("批注", systemImage: "text.bubble") }
+            .help("显示或隐藏批注与文字标记")
+
             Spacer()
 
             Picker("工作区", selection: $mode) {
@@ -283,7 +293,7 @@ private struct DocumentEditorView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 220)
+            .frame(width: 180)
 
             Spacer()
 
@@ -476,10 +486,12 @@ private struct DocumentEditorView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("页面大纲")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+                HStack {
+                    Text("页面大纲").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button { withAnimation { showSidebar = false } } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless).help("向左折叠大纲").accessibilityLabel("向左折叠大纲")
+                }
 
                 if outlineItems.isEmpty {
                     Text("添加 h1–h6 标题后会显示大纲")
@@ -525,6 +537,10 @@ private struct DocumentEditorView: View {
                 Label("转换引擎", systemImage: "gearshape.2")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if workspace.hasRecoverableDraft {
+                    Button("恢复未保存草稿") { workspace.restoreLatestDraft() }
+                        .font(.caption)
+                }
                 Text(conversionService.conversionStatus)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

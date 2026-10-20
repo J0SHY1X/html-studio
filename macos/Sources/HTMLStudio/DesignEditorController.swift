@@ -8,6 +8,38 @@ final class DesignEditorController: ObservableObject {
     @Published private(set) var statusText = "正在准备可视化编辑器…"
     @Published private(set) var zoomPercent = 100
 
+    @Published private(set) var comments: [PageComment] = []
+    private var commentsVisible = false
+
+    func refreshComments() {
+        invoke("commentsList", arguments: []) { [weak self] value in
+            self?.comments = (value as? [[String: String]] ?? []).compactMap { item in
+                guard let id = item["id"], let note = item["note"], let text = item["text"] else { return nil }
+                return PageComment(id: id, note: note, text: text)
+            }
+        }
+    }
+
+    func setCommentsVisible(_ visible: Bool) {
+        commentsVisible = visible
+        invoke("commentsVisible", arguments: [visible])
+        refreshComments()
+    }
+
+    func prepareComment(completion: @escaping (String) -> Void) {
+        invoke("prepareComment", arguments: []) { completion($0 as? String ?? "") }
+    }
+
+    func addComment(_ note: String, completion: @escaping (Bool) -> Void) {
+        invoke("addComment", arguments: [note]) { [weak self] value in
+            self?.refreshComments()
+            completion(value as? Bool ?? false)
+        }
+    }
+
+    func removeComment(_ id: String) { invoke("removeComment", arguments: [id]); refreshComments() }
+    func revealComment(_ id: String) { invoke("revealComment", arguments: [id]) }
+
     private weak var webView: WKWebView?
     private var pendingLoad: DispatchWorkItem?
 
@@ -40,6 +72,7 @@ final class DesignEditorController: ObservableObject {
         isReady = value
         if value {
             statusText = "可直接编辑页面内容"
+            setCommentsVisible(commentsVisible)
         }
     }
 

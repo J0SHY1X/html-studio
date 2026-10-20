@@ -21,6 +21,7 @@
     </div>
 
     <div class="file-actions">
+      <button id="toggle-sidebar" title="向左折叠大纲" aria-expanded="true" aria-controls="outline-sidebar">◀ 大纲</button>
       <button id="new-button" title="新建 (Ctrl+N)">新建</button>
       <button id="open-button" title="打开 (Ctrl+O)">打开</button>
       <button id="save-button" class="primary" title="保存 (Ctrl+S)">保存</button>
@@ -28,6 +29,7 @@
       <button id="undo-button" title="撤销当前编辑区域 (Ctrl+Z)">↶ 撤销</button>
       <button id="redo-button" title="重做当前编辑区域 (Ctrl+Shift+Z / Ctrl+Y)">↷ 重做</button>
       <button id="components-button" title="插入链接、按钮、图片、卡片等常用组件">⊞ 组件</button>
+      <button id="comments-toggle" aria-pressed="false">批注</button>
       <button id="find-button" title="在当前编辑区域查找 (Ctrl+F)">⌕ 查找</button>
     </div>
 
@@ -40,9 +42,14 @@
     <div class="export-actions">
       <button id="history-button" title="修改历史 (Ctrl+Alt+H)">修改历史</button>
       <button id="print-button" title="打印当前文档 (Ctrl+P)">打印</button>
-      <button id="export-markdown">导出 Markdown</button>
-      <button id="export-docx">导出 Word</button>
-      <button id="export-pdf" title="导出 PDF (Ctrl+Alt+P)">导出 PDF</button>
+      <div class="conversion-dropdown">
+        <button id="conversion-toggle" aria-haspopup="menu" aria-expanded="false" aria-controls="conversion-menu">转换 ▾</button>
+        <div id="conversion-menu" class="conversion-menu" role="menu" hidden>
+          <button id="export-markdown" role="menuitem">Markdown (.md)</button>
+          <button id="export-docx" role="menuitem">Word (.docx)</button>
+          <button id="export-pdf" role="menuitem" title="导出 PDF (Ctrl+Alt+P)">PDF (.pdf)</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -50,6 +57,20 @@
     <div id="document-tab-list" class="document-tab-list"></div>
     <button id="add-tab-button" class="add-tab-button" title="新建标签页">＋</button>
   </nav>
+
+  <aside id="comments-panel" class="comments-panel" hidden aria-label="批注列表">
+    <div class="comments-heading"><strong>批注</strong><button id="comments-close" title="隐藏批注">×</button></div>
+    <p>在页面选择文字，或将光标置于段落中，再添加批注。</p>
+    <button id="comment-add">＋ 添加批注</button>
+    <div id="comment-list"></div>
+  </aside>
+  <dialog id="comment-dialog">
+    <form id="comment-form"><h2>添加批注</h2><p id="comment-quote"></p>
+      <label>批注内容<textarea id="comment-note" rows="5" required maxlength="4000"></textarea></label>
+      <p id="comment-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" id="comment-cancel">取消</button><button type="submit" class="primary">添加批注</button></div>
+    </form>
+  </dialog>
 
   <section id="find-replace-bar" class="find-replace-bar" hidden aria-label="查找和替换">
     <div class="find-row">
@@ -71,7 +92,7 @@
   </section>
 
   <main class="app-shell">
-    <aside class="sidebar">
+    <aside id="outline-sidebar" class="sidebar">
       <section>
         <p class="section-label">文档</p>
         <div class="document-card">
@@ -84,13 +105,14 @@
       </section>
 
       <section class="outline-section">
-        <p class="section-label">页面大纲</p>
+        <p class="section-label">页面大纲 <button id="collapse-sidebar" title="向左折叠大纲">◀</button></p>
         <div id="outline" class="outline"></div>
       </section>
 
       <section class="sidebar-footer">
-        <span>Windows 版 · 0.3.12</span>
+        <span>Windows 版 · 0.3.13</span>
         <span>本地离线编辑</span>
+        <button id="recover-drafts" hidden>恢复未保存草稿</button>
       </section>
     </aside>
 
@@ -376,6 +398,7 @@
   <script src="converters.js"></script>
   <script src="guide.js"></script>
   <script src="components.js"></script>
+  <script src="annotations.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -42,7 +42,6 @@ struct DocumentRegressionTests {
                 let target = root.appendingPathComponent("selected.html")
                 try "<h1>选中文件</h1>".write(to: target, atomically: true, encoding: .utf8)
                 let opened = try workspace.open(target, fromExternalRequest: true)
-                workspace.restoreStartupDraft()
                 #expect(workspace.documents.count == 1)
                 #expect(workspace.activeDocument === opened)
                 #expect(opened.html == "<h1>选中文件</h1>")
@@ -53,12 +52,11 @@ struct DocumentRegressionTests {
     }
 
     @Test
-    func testLateExternalOpenReplacesUntouchedRestoredDraft() async throws {
+    func testNormalStartupKeepsDraftClosedWhenFileArrives() async throws {
         try await MainActor.run {
             try withWorkspace { workspace, drafts, root in
                 drafts.save(identifier: UUID(), html: "<p>旧草稿</p>", filePath: nil, isDirty: true)
-                workspace.restoreStartupDraft()
-                #expect(workspace.activeDocument.html == "<p>旧草稿</p>")
+                #expect(workspace.activeDocument.html == EditorDocument.starterHTML)
                 let target = root.appendingPathComponent("selected.html")
                 try "<h1>指定文件</h1>".write(to: target, atomically: true, encoding: .utf8)
                 try workspace.open(target, fromExternalRequest: true)
@@ -90,7 +88,6 @@ struct DocumentRegressionTests {
                 let target = root.appendingPathComponent("selected.html")
                 try "<h1>磁盘文件</h1>".write(to: target, atomically: true, encoding: .utf8)
                 drafts.save(identifier: UUID(), html: "<p>此文件的旧草稿</p>", filePath: target.path, isDirty: true)
-                workspace.restoreStartupDraft()
                 let opened = try workspace.open(target, fromExternalRequest: true)
                 #expect(workspace.documents.count == 1)
                 #expect(opened.html == "<h1>磁盘文件</h1>")

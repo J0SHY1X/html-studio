@@ -6,7 +6,6 @@ final class DocumentWorkspace: ObservableObject {
     @Published var selectedDocumentID: UUID
     private var startupDocumentID: UUID?
     private var startupHTML: String
-    private var startupResolved = false
     private let draftStore: DraftStore
     private let historyStore: ChangeLogStore
 
@@ -20,16 +19,21 @@ final class DocumentWorkspace: ObservableObject {
         startupHTML = initialDocument.html
     }
 
-    func restoreStartupDraft() {
-        guard !startupResolved else { return }
-        startupResolved = true
-        guard documents.count == 1, activeDocument.id == startupDocumentID,
-              activeDocument.html == startupHTML else { return }
+    var hasRecoverableDraft: Bool {
+        guard let snapshot = draftStore.restoreLatest() else { return false }
+        return !documents.contains { $0.isDirty && $0.html == snapshot.html }
+    }
+
+    func restoreLatestDraft() {
+        guard hasRecoverableDraft else { return }
         let restored = EditorDocument(draftStore: draftStore, historyStore: historyStore, restoreDraft: true)
-        documents = [restored]
+        if documents.count == 1 && activeDocument.id == startupDocumentID && !activeDocument.isDirty {
+            documents = [restored]
+        } else {
+            documents.append(restored)
+        }
+        startupDocumentID = nil
         selectedDocumentID = restored.id
-        startupDocumentID = restored.id
-        startupHTML = restored.html
     }
 
     var activeDocument: EditorDocument {
@@ -39,7 +43,6 @@ final class DocumentWorkspace: ObservableObject {
     @discardableResult
     func newDocument() -> EditorDocument {
         startupDocumentID = nil
-        startupResolved = true
         let document = EditorDocument(draftStore: draftStore, historyStore: historyStore)
         documents.append(document)
         selectedDocumentID = document.id
@@ -64,7 +67,6 @@ final class DocumentWorkspace: ObservableObject {
             documents.removeAll()
         }
         startupDocumentID = nil
-        startupResolved = true
         documents.append(document)
         selectedDocumentID = document.id
         return document

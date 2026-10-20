@@ -127,10 +127,70 @@ async function checkZoomAndComponents(page, assertLayout) {
   assert.equal(await page.locator("#zoom-reset").textContent(), "110%");
 }
 
+async function checkCommentsAndPanels(page) {
+  const frame=page.frameLocator("#design-frame");
+  const before=await page.locator("#workspace").boundingBox();
+  await page.locator("#collapse-sidebar").click();
+  assert.equal(await page.locator(".sidebar").isVisible(),false);
+  assert.ok((await page.locator("#workspace").boundingBox()).width>before.width+100);
+  await page.locator("#toggle-sidebar").click();
+  assert.equal(await page.locator(".sidebar").isVisible(),true);
+  await page.locator("#conversion-toggle").click();
+  assert.equal(await page.locator("#conversion-menu").isVisible(),true);
+  const a=await page.locator("#export-markdown").boundingBox(),b=await page.locator("#export-docx").boundingBox();
+  assert.ok(b.y>=a.y+a.height-1,"转换目标应纵向排列");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#conversion-menu").isVisible(),false);
+  await page.locator("#source-editor").fill('<html><body><p id="target">前文 <strong>重点文字</strong> 后文</p><p id="paragraph">整段文字批注</p></body></html>');
+  await frame.locator("#target strong").waitFor();
+  await page.evaluate(()=>{
+    const d=document.querySelector('#design-frame').contentDocument;
+    const r=d.createRange();r.selectNodeContents(d.querySelector('strong'));
+    const s=d.defaultView.getSelection();s.removeAllRanges();s.addRange(r);
+  });
+  await page.locator("#comments-toggle").click();
+  await page.locator("#comment-add").click();
+  await page.locator("#comment-note").fill('检查 <script> 与 "引号" & 换行\n第二行');
+  await page.locator("#comment-form button[type=submit]").click();
+  await frame.locator('[data-html-studio-comment]').waitFor();
+  assert.equal((await frame.locator("#target").textContent()).replaceAll("\u00a0", " "),'前文 重点文字 后文');
+  assert.equal(await page.locator(".comment-card").count(),1);
+  await page.waitForFunction(()=>document.querySelector('#source-editor').value.includes('data-html-studio-note'));
+  await page.locator("#undo-button").click();
+  await frame.locator('[data-html-studio-comment]').waitFor({state:'detached'});
+  await page.locator("#redo-button").click();
+  await frame.locator('[data-html-studio-comment]').waitFor();
+  await page.locator("#comments-close").click();
+  assert.equal(await page.locator("#comments-panel").isVisible(),false);
+  assert.equal(await frame.locator('[data-html-studio-comment]').getAttribute('title'),null);
+  await page.locator("#save-button").click();
+  const saved=await page.evaluate(()=>window.testSavedHTML);
+  assert.ok(saved.includes('data-html-studio-note') && !saved.includes('comment-visibility'));
+  await page.locator("#source-editor").fill(saved+'\n');
+  await frame.locator('[data-html-studio-comment]').waitFor();
+  await page.locator("#comments-toggle").click();
+  await page.locator(".comment-card").waitFor();
+  assert.match(await page.locator('.comment-card p').textContent(),/<script>.*引号/);
+  await page.evaluate(()=>{
+    const d=document.querySelector('#design-frame').contentDocument;
+    const r=d.createRange();r.setStart(d.querySelector('#paragraph').firstChild,2);r.collapse(true);
+    const s=d.defaultView.getSelection();s.removeAllRanges();s.addRange(r);
+  });
+  await page.locator("#comment-add").click();
+  await page.locator("#comment-note").fill('整段批注');
+  await page.locator("#comment-form button[type=submit]").click();
+  await page.waitForFunction(()=>document.querySelectorAll('.comment-card').length===2);
+  assert.equal(await frame.locator('#paragraph [data-html-studio-comment]').textContent(),'整段文字批注');
+  await page.locator('.comment-card button').filter({hasText:'删除批注'}).last().click();
+  await page.waitForFunction(()=>document.querySelectorAll('.comment-card').length===1);
+  assert.equal(await frame.locator('#paragraph').textContent(),'整段文字批注');
+  await page.locator("#comments-close").click();
+}
+
 async function main() {
   const server = http.createServer(async (request, response) => {
     const name = path.basename(new URL(request.url, "http://localhost").pathname) || "index.html";
-    if (!["index.html", "styles.css", "guide.js", "converters.js", "components.js", "renderer.js"].includes(name)) {
+    if (!["index.html", "styles.css", "guide.js", "converters.js", "components.js", "annotations.js", "renderer.js"].includes(name)) {
       response.writeHead(404).end();
       return;
     }
@@ -222,11 +282,13 @@ async function main() {
       await page.waitForFunction(() => document.querySelector("#design-frame").contentDocument?.body?.textContent.trim() === "");
       await assertLayout();
       await checkZoomAndComponents(page, () => assertLayout());
+      await checkCommentsAndPanels(page);
       assert.deepEqual(errors, []);
       await context.close();
 
       const normalContext = await browser.newContext({ viewport: size });
       await normalContext.addInitScript(() => {
+        localStorage.setItem("htmlStudioWindowsWorkspaceV3", JSON.stringify({documents:[{id:"last-draft",html:"<p>上一次的旧稿</p>",dirty:true}]}));
         window.htmlStudioAPI = {
           startupFiles: async () => ({ externalLaunch: false, files: [] }),
           onOpenFiles: () => {}, onMenuCommand: () => {}, setWindowTitle: async () => {},
@@ -236,14 +298,18 @@ async function main() {
       });
       const normalPage = await normalContext.newPage();
       await normalPage.goto(`http://127.0.0.1:${server.address().port}/index.html`);
-      await normalPage.waitForFunction(() => document.querySelectorAll(".document-tab").length === 2);
+      await normalPage.waitForFunction(() => document.querySelectorAll(".document-tab").length === 1);
       await assertLayout(normalPage);
+      assert.equal((await normalPage.frameLocator("#design-frame").locator("body").textContent()).trim(), "");
+      assert.equal(await normalPage.locator(".document-tab").count(), 1);
+      await normalPage.locator("#recover-drafts").click();
+      await normalPage.frameLocator("#design-frame").getByText("上一次的旧稿").waitFor();
       await normalPage.locator("#new-button").click();
       await normalPage.waitForFunction(() => document.querySelector("#design-frame").contentDocument?.body?.textContent.trim() === "");
       await assertLayout(normalPage);
       await normalContext.close();
     }
-    console.log("HTML Studio workspace UI regression tests passed (31 headings, two window sizes, zoom, 12 components, embedded images, source undo, file launch and save).");
+    console.log("HTML Studio workspace UI regression tests passed (31 headings, two window sizes, zoom, 12 components, embedded images, annotations, collapsed outline, conversion dropdown, blank startup, manual recovery and save).");
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

@@ -27,7 +27,7 @@ struct HTMLPreview: NSViewRepresentable {
         )
         configuration.userContentController.addUserScript(
             WKUserScript(
-                source: Self.editorBridgeScript,
+                source: AnnotationScript.source + "\n" + Self.editorBridgeScript,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
@@ -120,6 +120,7 @@ struct HTMLPreview: NSViewRepresentable {
                 let action = payload["action"] as? String ?? "编辑可视化页面"
                 let shouldRefocus = payload["shouldRefocus"] as? Bool ?? false
                 onHTMLChange(editedHTML, action)
+                controller.refreshComments()
                 if shouldRefocus {
                     DispatchQueue.main.async { [weak self] in
                         guard let webView = self?.webView else { return }
@@ -562,6 +563,7 @@ struct HTMLPreview: NSViewRepresentable {
 
         snapshot() {
           const clone = document.documentElement.cloneNode(true);
+          window.HTMLStudioAnnotations.create(document).prepareClone(clone);
           clone.querySelectorAll('[data-html-studio-ui]').forEach((node) => node.remove());
           clone.querySelectorAll('[data-html-studio-active-page]').forEach((node) => {
             node.removeAttribute('data-html-studio-active-page');
@@ -688,6 +690,28 @@ struct HTMLPreview: NSViewRepresentable {
             this.notifyChange(action, true);
           });
         },
+
+        commentsList() { return window.HTMLStudioAnnotations.create(document).list(); },
+        commentsVisible(show) { window.HTMLStudioAnnotations.create(document).visible(show); },
+        prepareComment() {
+          this.restoreSelection();
+          this.commentRange = window.HTMLStudioAnnotations.create(document).target();
+          return this.commentRange?.toString() || '';
+        },
+        addComment(note) {
+          if (!this.editable || this.isComposing) return false;
+          const result = window.HTMLStudioAnnotations.create(document).add(this.commentRange, note);
+          this.commentRange = null;
+          if (result) this.finishCommand('添加批注');
+          return result;
+        },
+        removeComment(id) {
+          if (!this.editable) return false;
+          const result = window.HTMLStudioAnnotations.create(document).remove(id);
+          if (result) this.finishCommand('删除批注');
+          return result;
+        },
+        revealComment(id) { window.HTMLStudioAnnotations.create(document).reveal(id); },
 
         selectedText() {
           this.saveSelection();

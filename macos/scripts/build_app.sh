@@ -4,15 +4,30 @@ set -euo pipefail
 
 SCRIPT_DIR=${0:A:h}
 PROJECT_ROOT=${SCRIPT_DIR:h}
+BUILD_SCRATCH_DIR=$(mktemp -d /private/tmp/html-studio-swiftpm.XXXXXX)
+STAGE_DIR=""
+cleanup() {
+  rm -rf -- "$BUILD_SCRATCH_DIR"
+  if [[ -n "$STAGE_DIR" ]]; then
+    rm -rf -- "$STAGE_DIR"
+  fi
+}
+trap cleanup EXIT
 if [[ -z ${SDKROOT:-} ]]; then
   export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
 fi
-export SWIFTPM_MODULECACHE_OVERRIDE="$PROJECT_ROOT/.build/module-cache"
-export CLANG_MODULE_CACHE_PATH="$PROJECT_ROOT/.build/clang-module-cache"
+export SWIFTPM_MODULECACHE_OVERRIDE="$BUILD_SCRATCH_DIR/module-cache"
+export CLANG_MODULE_CACHE_PATH="$BUILD_SCRATCH_DIR/clang-module-cache"
 typeset -a BUILD_FLAGS
-BUILD_FLAGS=(--sdk "$SDKROOT")
+# A temporary scratch path avoids File Provider metadata blocking dSYM creation
+# when the source repository lives in a synced Documents folder.
+BUILD_FLAGS=(--sdk "$SDKROOT" --scratch-path "$BUILD_SCRATCH_DIR")
 if [[ -n ${HTML_STUDIO_SWIFT_BUILD_SYSTEM:-} ]]; then
   BUILD_FLAGS+=(--build-system "$HTML_STUDIO_SWIFT_BUILD_SYSTEM")
+elif [[ "$(xcode-select -p)" == "/Library/Developer/CommandLineTools" ]]; then
+  # The Xcode build system bundled with Command Line Tools can fail while
+  # producing dSYM files. Native SwiftPM builds the same release executable.
+  BUILD_FLAGS+=(--build-system native)
 fi
 
 swift build --disable-sandbox "${BUILD_FLAGS[@]}" -c release --package-path "$PROJECT_ROOT" --product HTMLStudio
@@ -21,7 +36,6 @@ DIST_DIR="$PROJECT_ROOT/dist"
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PROJECT_ROOT/Resources/Info.plist")
 ARCH=$(uname -m)
 STAGE_DIR=$(mktemp -d /private/tmp/html-studio-build.XXXXXX)
-trap 'rm -rf "$STAGE_DIR"' EXIT
 APP_DIR="$STAGE_DIR/HTML Studio.app"
 DIST_APP_DIR="$DIST_DIR/HTML Studio.app"
 ZIP_PATH="$DIST_DIR/HTML Studio-macOS-$ARCH-$VERSION.zip"

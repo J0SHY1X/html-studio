@@ -31,15 +31,26 @@ struct DesignToolbar: View {
         VStack(spacing: 3) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
-                    Toggle(isOn: $isEditable) {
-                        Label("直接编辑", systemImage: "cursorarrow.and.square.on.square.dashed")
-                            .font(.caption)
+                    Label("可视化页面", systemImage: "square.and.pencil")
+                        .font(.caption)
+                        .fontWeight(.medium)
+
+                    Picker("页面模式", selection: $isEditable) {
+                        Text("直接编辑").tag(true)
+                        Text("交互预览").tag(false)
                     }
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 168)
                     .onChange(of: isEditable) { value in
                         controller.setEditable(value)
                     }
+                    .help("直接编辑可修改文字和格式；交互预览用于点击链接和运行页面脚本")
+
+                    Text(isEditable ? "可修改文字与格式" : "可操作链接与脚本")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize()
 
                     groupDivider
 
@@ -77,25 +88,23 @@ struct DesignToolbar: View {
                     commandButton("strikeThrough", icon: "strikethrough", help: "删除线")
 
                     ColorPicker(
-                        "",
+                        "文字颜色",
                         selection: $foregroundColor,
                         supportsOpacity: false
                     )
-                    .labelsHidden()
-                    .frame(width: 26)
-                    .help("文字颜色")
+                    .fixedSize()
+                    .help("修改选中文字的颜色")
                     .onChange(of: foregroundColor) { color in
                         controller.execute("foreColor", value: color.hexString)
                     }
 
                     ColorPicker(
-                        "",
+                        "文字高亮",
                         selection: $highlightColor,
                         supportsOpacity: true
                     )
-                    .labelsHidden()
-                    .frame(width: 26)
-                    .help("文字底色")
+                    .fixedSize()
+                    .help("为选中文字增加荧光笔式底色")
                     .onChange(of: highlightColor) { color in
                         controller.execute("hiliteColor", value: color.hexString)
                     }
@@ -208,12 +217,12 @@ struct DesignToolbar: View {
                     .help("复制、新增、拆分页面或清除页面底色")
 
                     ColorPicker(
-                        "页底色",
+                        "页面底色",
                         selection: $pageBackgroundColor,
                         supportsOpacity: true
                     )
                     .fixedSize()
-                    .help("修改当前页面底色")
+                    .help("修改当前页面的整体底色（不是文字高亮）")
                     .onChange(of: pageBackgroundColor) { color in
                         controller.setPageBackgroundColor(color.hexString)
                     }
@@ -271,12 +280,12 @@ struct DesignToolbar: View {
                     .fixedSize()
 
                     ColorPicker(
-                        "表底色",
+                        "表格底色",
                         selection: $tableBackgroundColor,
                         supportsOpacity: true
                     )
                     .fixedSize()
-                    .help("修改光标所在表格的底色")
+                    .help("修改光标所在整张表格的底色（不是文字高亮）")
                     .onChange(of: tableBackgroundColor) { color in
                         controller.setTableBackgroundColor(color.hexString)
                     }

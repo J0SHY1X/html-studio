@@ -585,23 +585,6 @@ private struct DocumentEditorView: View {
 
     private var previewPane: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "square.and.pencil")
-                Text(designEditing ? "可视化编辑" : "交互预览")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                Spacer()
-                Text(designEditing ? "右键支持剪贴板、底色、段落、表格与页面操作" : "页面脚本和链接可正常交互")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(Color(nsColor: .windowBackgroundColor))
-
-            Divider()
-
             DesignToolbar(
                 controller: document.designController,
                 isEditable: $designEditing,

@@ -34,6 +34,8 @@ extension DocumentRegressionTests {
         #expect(success)
         for _ in 0..<80 { if doc.html.contains("data-html-studio-note=\"") { break };try await Task.sleep(nanoseconds: 25_000_000) }
         #expect(doc.html.contains("data-html-studio-note=\""))
+        #expect((try await web.evaluateJavaScript("document.querySelector('[data-html-studio-comment]').getAttribute('data-html-studio-comment-index')")) as? String == "1")
+        #expect(((try await web.evaluateJavaScript("window.__HTMLStudioEditor.commentsList()[0].index")) as? String) == "1")
         #expect(((try await web.evaluateJavaScript("document.querySelector('#target').textContent")) as? String)?.replacingOccurrences(of: "\u{00a0}", with: " ") == "前文 重点文字 后文")
         doc.designController.execute("undo")
         for _ in 0..<80 { if !doc.html.contains("data-html-studio-note=\"") { break };try await Task.sleep(nanoseconds: 25_000_000) }
@@ -41,6 +43,16 @@ extension DocumentRegressionTests {
         doc.designController.execute("redo")
         for _ in 0..<80 { if doc.html.contains("data-html-studio-note=\"") { break };try await Task.sleep(nanoseconds: 25_000_000) }
         #expect(doc.html.contains("data-html-studio-note=\""))
+        let updatedNote = "已编辑并保存的批注"
+        let commentID = try #require((try await web.evaluateJavaScript("window.__HTMLStudioEditor.commentsList()[0].id")) as? String)
+        let updated: Bool = await withCheckedContinuation { continuation in
+            doc.designController.updateComment(commentID, note: updatedNote) { continuation.resume(returning: $0) }
+        }
+        #expect(updated)
+        for _ in 0..<80 { if doc.html.contains(updatedNote) { break };try await Task.sleep(nanoseconds: 25_000_000) }
+        #expect(doc.html.contains(updatedNote))
+        #expect((try await web.evaluateJavaScript("window.__HTMLStudioEditor.commentsList()[0].note")) as? String == updatedNote)
+        #expect((try await web.evaluateJavaScript("document.querySelector('[data-html-studio-comment]').title")) as? String == updatedNote)
         let original = doc.html
         doc.designController.setCommentsVisible(false)
         _ = try await web.evaluateJavaScript("window.__HTMLStudioEditor.snapshot()")
@@ -54,14 +66,17 @@ extension DocumentRegressionTests {
         doc.designController.loadHTMLImmediately(snapshot, baseURL: nil)
         for _ in 0..<120 { if doc.designController.isReady { break };try await Task.sleep(nanoseconds: 25_000_000) }
         let list = try #require(try await web.evaluateJavaScript("window.__HTMLStudioEditor.commentsList()") as? [[String: String]])
-        #expect(list.count == 1);#expect(list.first?["note"] == note)
+        #expect(list.count == 1);#expect(list.first?["note"] == updatedNote);#expect(list.first?["index"] == "1")
         _ = try await web.evaluateJavaScript("""
         var range = document.createRange();range.setStart(document.querySelector('#paragraph').firstChild,2);range.collapse(true);
         window.getSelection().removeAllRanges();window.getSelection().addRange(range);
         window.__HTMLStudioEditor.saveSelection();window.__HTMLStudioEditor.prepareComment();window.__HTMLStudioEditor.addComment('整段批注');
         """)
         #expect((try await web.evaluateJavaScript("document.querySelector('#paragraph [data-html-studio-comment]').textContent")) as? String == "整段文字")
-        _ = try await web.evaluateJavaScript("window.__HTMLStudioEditor.removeComment(window.__HTMLStudioEditor.commentsList()[1].id)")
+        #expect((try await web.evaluateJavaScript("window.__HTMLStudioEditor.commentsList().map(item => item.index).join(',')")) as? String == "1,2")
+        _ = try await web.evaluateJavaScript("window.__HTMLStudioEditor.removeComment(window.__HTMLStudioEditor.commentsList()[0].id)")
+        #expect((try await web.evaluateJavaScript("window.__HTMLStudioEditor.commentsList()[0].index")) as? String == "1")
+        _ = try await web.evaluateJavaScript("window.__HTMLStudioEditor.removeComment(window.__HTMLStudioEditor.commentsList()[0].id)")
         #expect((try await web.evaluateJavaScript("document.querySelector('#paragraph').textContent")) as? String == "整段文字")
     }
 

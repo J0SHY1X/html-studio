@@ -13,9 +13,10 @@ final class DesignEditorController: ObservableObject {
 
     func refreshComments() {
         invoke("commentsList", arguments: []) { [weak self] value in
-            self?.comments = (value as? [[String: String]] ?? []).compactMap { item in
+            self?.comments = (value as? [[String: String]] ?? []).enumerated().compactMap { offset, item in
                 guard let id = item["id"], let note = item["note"], let text = item["text"] else { return nil }
-                return PageComment(id: id, note: note, text: text)
+                let number = Int(item["index"] ?? "") ?? offset + 1
+                return PageComment(id: id, number: number, note: note, text: text)
             }
         }
     }
@@ -32,6 +33,13 @@ final class DesignEditorController: ObservableObject {
 
     func addComment(_ note: String, completion: @escaping (Bool) -> Void) {
         invoke("addComment", arguments: [note]) { [weak self] value in
+            self?.refreshComments()
+            completion(value as? Bool ?? false)
+        }
+    }
+
+    func updateComment(_ id: String, note: String, completion: @escaping (Bool) -> Void) {
+        invoke("updateComment", arguments: [id, note]) { [weak self] value in
             self?.refreshComments()
             completion(value as? Bool ?? false)
         }

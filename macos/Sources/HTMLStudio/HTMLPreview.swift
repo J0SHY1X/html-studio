@@ -705,6 +705,12 @@ struct HTMLPreview: NSViewRepresentable {
           if (result) this.finishCommand('添加批注');
           return result;
         },
+        updateComment(id, note) {
+          if (!this.editable || this.isComposing) return false;
+          const result = window.HTMLStudioAnnotations.create(document).update(id, note);
+          if (result) this.finishCommand('编辑批注');
+          return result;
+        },
         removeComment(id) {
           if (!this.editable) return false;
           const result = window.HTMLStudioAnnotations.create(document).remove(id);

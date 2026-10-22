@@ -8,6 +8,13 @@ A local-first HTML source and visual editor for macOS and Windows, with Markdown
 
 [下载 v0.3.14](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.14) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
 
+## 0.3.15 Mac 本地迭代
+
+- 批注在页面与侧栏中按文档顺序自动编号，新增、删除后会自动重排。
+- 批注可重新编辑并保存；调整编辑窗口顶部和文本输入内边距，避免文字被边缘遮挡。
+- “可视化编辑”与“直接编辑”合并为同一工具栏的模式选择，明确区分“直接编辑”与“交互预览”。
+- 颜色控件显示“文字颜色”、“文字高亮”、“页面底色”和“表格底色”完整标签。
+
 ## 0.3.14 更新
 
 - 修复 Mac 顶部“源码／分屏／预览”切换控件旁的“工作区”标签被挤压为“工”和省略号的问题，隐藏多余标签，保留三个模式选项。

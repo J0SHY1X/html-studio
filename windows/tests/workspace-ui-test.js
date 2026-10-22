@@ -155,6 +155,14 @@ async function checkCommentsAndPanels(page) {
   await frame.locator('[data-html-studio-comment]').waitFor();
   assert.equal((await frame.locator("#target").textContent()).replaceAll("\u00a0", " "),'前文 重点文字 后文');
   assert.equal(await page.locator(".comment-card").count(),1);
+  assert.equal(await frame.locator('[data-html-studio-comment]').getAttribute('data-html-studio-comment-index'),'1');
+  assert.match(await page.locator('.comment-card .comment-locate').textContent(),/^\[1\]/);
+  await page.locator('.comment-card button').filter({hasText:'编辑批注'}).click();
+  assert.equal(await page.locator('#comment-dialog-title').textContent(),'编辑批注');
+  await page.locator('#comment-note').fill('修改后的批注');
+  await page.locator('#comment-submit').click();
+  assert.equal(await page.locator('.comment-card p').textContent(),'修改后的批注');
+  assert.equal(await frame.locator('[data-html-studio-comment]').getAttribute('data-html-studio-note'),'修改后的批注');
   await page.waitForFunction(()=>document.querySelector('#source-editor').value.includes('data-html-studio-note'));
   await page.locator("#undo-button").click();
   await frame.locator('[data-html-studio-comment]').waitFor({state:'detached'});
@@ -170,7 +178,7 @@ async function checkCommentsAndPanels(page) {
   await frame.locator('[data-html-studio-comment]').waitFor();
   await page.locator("#comments-toggle").click();
   await page.locator(".comment-card").waitFor();
-  assert.match(await page.locator('.comment-card p').textContent(),/<script>.*引号/);
+  assert.equal(await page.locator('.comment-card p').textContent(),'修改后的批注');
   await page.evaluate(()=>{
     const d=document.querySelector('#design-frame').contentDocument;
     const r=d.createRange();r.setStart(d.querySelector('#paragraph').firstChild,2);r.collapse(true);
@@ -181,9 +189,12 @@ async function checkCommentsAndPanels(page) {
   await page.locator("#comment-form button[type=submit]").click();
   await page.waitForFunction(()=>document.querySelectorAll('.comment-card').length===2);
   assert.equal(await frame.locator('#paragraph [data-html-studio-comment]').textContent(),'整段文字批注');
-  await page.locator('.comment-card button').filter({hasText:'删除批注'}).last().click();
+  assert.equal(await frame.locator('#paragraph [data-html-studio-comment]').getAttribute('data-html-studio-comment-index'),'2');
+  await page.locator('.comment-card button').filter({hasText:'删除批注'}).first().click();
   await page.waitForFunction(()=>document.querySelectorAll('.comment-card').length===1);
-  assert.equal(await frame.locator('#paragraph').textContent(),'整段文字批注');
+  assert.equal(await frame.locator('#paragraph [data-html-studio-comment]').textContent(),'整段文字批注');
+  assert.equal(await frame.locator('#paragraph [data-html-studio-comment]').getAttribute('data-html-studio-comment-index'),'1');
+  assert.match(await page.locator('.comment-card .comment-locate').textContent(),/^\[1\]/);
   await page.locator("#comments-close").click();
 }
 

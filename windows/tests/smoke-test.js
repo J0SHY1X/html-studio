@@ -32,7 +32,7 @@ for (const relativePath of requiredFiles) {
 const packageJSON = JSON.parse(
   fs.readFileSync(path.join(root, "package.json"), "utf8")
 );
-assert.equal(packageJSON.version, "0.3.14");
+assert.equal(packageJSON.version, "0.3.15");
 assert.equal(packageJSON.build.win.target[0].target, "nsis");
 assert.match(packageJSON.build.nsis.artifactName, /Setup/);
 assert.match(packageJSON.build.portable.artifactName, /Portable/);
@@ -44,7 +44,8 @@ for (const relativePath of [
   "src/pdf-export.js",
   "src/renderer/guide.js",
   "src/renderer/renderer.js",
-  "src/renderer/converters.js"
+  "src/renderer/converters.js",
+  "src/renderer/annotations.js"
 ]) {
   const source = fs.readFileSync(path.join(root, relativePath), "utf8");
   new vm.Script(source, { filename: relativePath });
@@ -78,6 +79,10 @@ assert.match(rendererHTML, />↷ 重做</);
 assert.match(rendererHTML, /id="find-replace-bar"/);
 assert.match(rendererHTML, /id="replace-current"/);
 assert.match(rendererHTML, /data-context-action="findReplace"/);
+assert.match(rendererHTML, /id="comment-dialog-title"/);
+assert.match(rendererHTML, /id="comment-submit"/);
+assert.match(rendererHTML, />文字颜色</);
+assert.match(rendererHTML, />文字高亮</);
 
 const rendererJS = fs.readFileSync(
   path.join(root, "src/renderer/renderer.js"),

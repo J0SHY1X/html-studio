@@ -2676,14 +2676,32 @@ function renderComments() {
   if (!items.length) {const p=document.createElement("p");p.textContent="暂无批注";list.append(p);}
   for (const item of items) {
     const card=document.createElement("div");card.className="comment-card";
-    const locate=document.createElement("button");locate.className="comment-locate";locate.textContent=item.text.slice(0,100);locate.title="定位到批注文字";
+    const locate=document.createElement("button");locate.className="comment-locate";locate.textContent=`[${item.index}] ${item.text.slice(0,100)}`;locate.title="定位到批注文字";
     locate.onclick=()=>engine.reveal(item.id);
     const note=document.createElement("p");note.textContent=item.note;
+    const actions=document.createElement("div");actions.className="comment-card-actions";
+    const edit=document.createElement("button");edit.textContent="编辑批注";edit.disabled=isGuide() || !state.editEnabled;
+    edit.onclick=()=>openCommentDialog({commentID:item.id,quote:item.text,note:item.note});
     const remove=document.createElement("button");remove.textContent="删除批注";remove.disabled=isGuide() || !state.editEnabled;
     remove.onclick=()=>{engine.remove(item.id);captureDesignHTML("删除批注");renderComments();};
-    card.append(locate,note,remove);list.append(card);
+    actions.append(edit,remove);card.append(locate,note,actions);list.append(card);
   }
   document.querySelector("#comment-add").disabled=isGuide() || !state.editEnabled;
+}
+function updateCommentCount() {
+  const note=document.querySelector("#comment-note");
+  document.querySelector("#comment-count").textContent=`${note.value.length} / 4000`;
+}
+function openCommentDialog({commentID=null,range=null,quote="",note=""}={}) {
+  const editing=Boolean(commentID);
+  commentContext={id:state.id,commentID,range};
+  document.querySelector("#comment-dialog-title").textContent=editing ? "编辑批注" : "添加批注";
+  document.querySelector("#comment-submit").textContent=editing ? "保存批注" : "添加批注";
+  document.querySelector("#comment-quote").textContent=quote.slice(0,240);
+  document.querySelector("#comment-note").value=note;
+  document.querySelector("#comment-error").hidden=true;
+  updateCommentCount();
+  commentDialog.showModal();document.querySelector("#comment-note").focus();
 }
 function showComments(show) {
   commentsVisible=show;commentsPanel.hidden=!show;
@@ -2708,20 +2726,21 @@ document.querySelector("#comment-add").onclick=()=>{
   restoreSelection();
   const range=annotationEngine()?.target();
   if (!range) {showToast("请先在页面中选择文字，或点击需要批注的段落。");return;}
-  commentContext={id:state.id,range};
-  document.querySelector("#comment-quote").textContent=range.toString().slice(0,240);
-  document.querySelector("#comment-note").value="";
-  document.querySelector("#comment-error").hidden=true;
-  commentDialog.showModal();document.querySelector("#comment-note").focus();
+  openCommentDialog({range,quote:range.toString()});
 };
+document.querySelector("#comment-note").addEventListener("input",updateCommentCount);
 document.querySelector("#comment-cancel").onclick=()=>commentDialog.close();
 commentDialog.addEventListener("close",()=>{commentContext=null;});
 document.querySelector("#comment-form").onsubmit=event=>{
   event.preventDefault();
   if (commentContext?.id!==state.id) return;
-  const result=annotationEngine().add(commentContext.range,document.querySelector("#comment-note").value);
-  if (!result) {const error=document.querySelector("#comment-error");error.textContent="请选择尚未批注的文字或段落，并填写批注内容。";error.hidden=false;return;}
-  commentDialog.close();workspaceState.activeEditor="design";captureDesignHTML("添加批注");showComments(true);
+  const editing=Boolean(commentContext.commentID);
+  const engine=annotationEngine();
+  const result=editing
+    ? engine.update(commentContext.commentID,document.querySelector("#comment-note").value)
+    : engine.add(commentContext.range,document.querySelector("#comment-note").value);
+  if (!result) {const error=document.querySelector("#comment-error");error.textContent=editing ? "批注可能已被删除，请关闭窗口后重试。" : "请选择尚未批注的文字或段落，并填写批注内容。";error.hidden=false;return;}
+  commentDialog.close();workspaceState.activeEditor="design";captureDesignHTML(editing ? "编辑批注" : "添加批注");showComments(true);
 };
 const conversionMenu=document.querySelector("#conversion-menu");
 const conversionToggle=document.querySelector("#conversion-toggle");

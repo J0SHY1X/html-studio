@@ -65,10 +65,12 @@
     <div id="comment-list"></div>
   </aside>
   <dialog id="comment-dialog">
-    <form id="comment-form"><h2>添加批注</h2><p id="comment-quote"></p>
+    <form id="comment-form"><h2 id="comment-dialog-title">添加批注</h2>
+      <p class="comment-target-label">批注对象</p>
+      <p id="comment-quote"></p>
       <label>批注内容<textarea id="comment-note" rows="5" required maxlength="4000"></textarea></label>
       <p id="comment-error" role="alert" hidden></p>
-      <div class="dialog-actions"><button type="button" id="comment-cancel">取消</button><button type="submit" class="primary">添加批注</button></div>
+      <div class="dialog-actions"><span id="comment-count">0 / 4000</span><button type="button" id="comment-cancel">取消</button><button type="submit" id="comment-submit" class="primary">添加批注</button></div>
     </form>
   </dialog>
 
@@ -110,7 +112,7 @@
       </section>
 
       <section class="sidebar-footer">
-        <span>Windows 版 · 0.3.14</span>
+        <span>Windows 版 · 0.3.15</span>
         <span>本地离线编辑</span>
         <button id="recover-drafts" hidden>恢复未保存草稿</button>
       </section>
@@ -130,17 +132,14 @@
       </section>
 
       <section id="design-pane" class="pane design-pane">
-        <div class="pane-title">
-          <span>✎ 可视化编辑</span>
-          <span id="design-status">点击页面即可输入</span>
-        </div>
-
         <div class="design-toolbar" aria-label="可视化编辑工具栏">
           <div class="toolbar-row">
+            <strong class="design-mode-label">✎ 可视化页面</strong>
             <label class="edit-toggle">
               <input id="edit-toggle" type="checkbox" checked>
               <span>直接编辑</span>
             </label>
+            <span id="design-status" class="design-status-inline">点击页面即可输入</span>
             <span class="separator"></span>
 
             <select id="font-family" title="字体">
@@ -176,12 +175,12 @@
             <button data-command="italic" title="斜体"><em>I</em></button>
             <button data-command="underline" title="下划线"><u>U</u></button>
             <button data-command="strikeThrough" title="删除线"><s>S</s></button>
-            <label class="color-tool" title="文字颜色">
-              A
+            <label class="color-tool" title="修改选中文字的颜色">
+              <span>文字颜色</span>
               <input id="foreground-color" type="color" value="#111827">
             </label>
-            <label class="color-tool highlight" title="文字底色">
-              ▰
+            <label class="color-tool highlight" title="为选中文字增加荧光笔式底色">
+              <span>文字高亮</span>
               <input id="highlight-color" type="color" value="#fff2a8">
             </label>
             <span class="separator"></span>

@@ -1,0 +1,46 @@
+HTML Studio v0.3.15 更新说明
+发布日期：2026年10月22日
+
+一、发布文件
+
+1. HTML-Studio-macOS-arm64-0.3.15.zip
+   适用于 Apple 芯片 Mac。
+
+2. HTML-Studio-0.3.15-x64-Portable.zip
+   适用于 Windows 10/11 x64，解压即可运行，无需安装。
+
+3. HTML Studio-0.3.15-x64-Portable（文件夹）
+   Windows 免安装版的已解压副本，可直接复制到本机后运行“HTML Studio.exe”。
+
+4. HTML-Studio-0.3.15-SHA256SUMS.txt
+   发布包完整性校验值。
+
+二、本次更新
+
+1. 批注按页面中的出现顺序自动编号；新增、删除批注后编号自动重排。
+2. 批注支持重新编辑并保存，修改会进入应用的修改记录。
+3. 修正批注编辑窗口顶部文字被遮挡的问题，并优化输入区、批注对象及字数显示。
+4. 将“可视化编辑”与“直接编辑”整合到同一工具栏，明确“直接编辑／交互预览”的关系。
+5. 工具栏明确显示“文字颜色”和“文字高亮”；“页面底色”位于“页面”菜单，“表格底色”位于“表格”菜单。
+6. Mac 与 Windows 版本同步更新为 0.3.15。
+
+三、安装与使用
+
+Mac：
+1. 解压 HTML-Studio-macOS-arm64-0.3.15.zip。
+2. 将“HTML Studio.app”拖入“应用程序”文件夹。
+3. 本机已经替换安装为“HTML Studio-0.3.15-for MAC.app”。
+
+Windows：
+1. 解压 HTML-Studio-0.3.15-x64-Portable.zip。
+2. 打开解压后的文件夹，双击“HTML Studio.exe”。
+3. 可将整个文件夹复制到任意位置；请勿只移动其中的 exe 文件。
+
+四、校验值（SHA-256）
+
+Mac：e3dcb50c37cb581275c2a1c4a623c3d4436cdabbfd145d79c656e003688e8b84
+Windows：f8243bbd5e96ad75d37728063f42467f6dfc3d0d7d2cb1a2c6c7542cbdd6306f
+
+五、验证情况
+
+已完成 Mac 应用签名完整性检查、启动与批注操作检查；Windows 已完成核心功能测试、文档转换测试、主进程测试、PDF/打印 HTML 测试，以及两种窗口尺寸下的界面回归测试。Windows 发布包内的程序版本和功能文件已再次核验为 0.3.15。

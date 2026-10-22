@@ -1,0 +1,2 @@
+e3dcb50c37cb581275c2a1c4a623c3d4436cdabbfd145d79c656e003688e8b84  HTML-Studio-macOS-arm64-0.3.15.zip
+f8243bbd5e96ad75d37728063f42467f6dfc3d0d7d2cb1a2c6c7542cbdd6306f  HTML-Studio-0.3.15-x64-Portable.zip

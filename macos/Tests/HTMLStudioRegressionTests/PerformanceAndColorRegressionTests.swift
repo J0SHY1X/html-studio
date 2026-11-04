@@ -6,6 +6,61 @@ import WebKit
 
 extension DocumentRegressionTests {
     @Test @MainActor
+    func switchingDocumentsFlushesPendingVisualInput() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HTMLStudio-SwitchFlush-\(UUID().uuidString)")
+        let workspace = DocumentWorkspace(
+            draftStore: DraftStore(supportDirectory: root),
+            historyStore: ChangeLogStore(supportDirectory: root)
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = workspace.activeDocument
+        original.updateHTML("<html><body><p id=\"target\">切换测试</p></body></html>")
+        let host = NSHostingView(rootView: ContentView(workspace: workspace))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680),
+            styleMask: [.titled, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        func descendants(_ view: NSView) -> [NSView] {
+            [view] + view.subviews.flatMap(descendants)
+        }
+        let webView = try #require(descendants(host).compactMap { $0 as? WKWebView }.first)
+        for _ in 0..<120 {
+            if original.designController.isReady { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        #expect(original.designController.isReady)
+        _ = try await webView.evaluateJavaScript(#"""
+        (() => {
+          const target = document.querySelector('#target');
+          target.firstChild.appendData('－切换前最后输入');
+          target.dispatchEvent(new InputEvent('input', {
+            bubbles: true,
+            inputType: 'insertText',
+            data: '－切换前最后输入'
+          }));
+          return true;
+        })()
+        """#)
+        NotificationCenter.default.post(name: .htmlStudioNewDocument, object: nil)
+        for _ in 0..<80 {
+            if workspace.documents.count == 2 { break }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        #expect(workspace.documents.count == 2)
+        #expect(original.html.contains("切换前最后输入"))
+        #expect(!original.designController.hasUnsynchronizedChanges)
+    }
+
+    @Test @MainActor
     func largeVisualDocumentCoalescesFullHTMLSynchronization() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory

@@ -149,7 +149,7 @@ private struct DocumentEditorView: View {
     private var editorWithFileCommands: some View {
         editorLayout
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioNewDocument)) { _ in
-                workspace.newDocument()
+                newDocumentAfterDesignSync()
             }
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioOpenDocument)) { _ in
                 openFromPanel()
@@ -161,7 +161,9 @@ private struct DocumentEditorView: View {
                 DispatchQueue.main.async {
                     let pending = FileOpenRequests.shared.pendingURLs
                     FileOpenRequests.shared.pendingURLs = []
-                    pending.forEach { open($0, fromExternalRequest: true) }
+                    synchronizeDesign(document) {
+                        pending.forEach { open($0, fromExternalRequest: true) }
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocument)) { _ in
@@ -341,7 +343,7 @@ private struct DocumentEditorView: View {
                         DocumentTabItem(
                             document: item,
                             isSelected: item.id == workspace.selectedDocumentID,
-                            onSelect: { workspace.select(item) },
+                            onSelect: { selectAfterDesignSync(item) },
                             onClose: { requestClose(item) }
                         )
                     }
@@ -354,7 +356,7 @@ private struct DocumentEditorView: View {
                 .frame(height: 22)
 
             Button {
-                workspace.newDocument()
+                newDocumentAfterDesignSync()
             } label: {
                 Image(systemName: "plus")
                     .frame(width: 24, height: 22)
@@ -805,6 +807,12 @@ private struct DocumentEditorView: View {
     }
 
     private func openFromPanel() {
+        synchronizeDesign(document) {
+            presentOpenPanel()
+        }
+    }
+
+    private func presentOpenPanel() {
         let panel = NSOpenPanel()
         panel.title = "在标签页中打开网页或文档"
         panel.allowsMultipleSelection = true
@@ -859,6 +867,19 @@ private struct DocumentEditorView: View {
             workspace.close(target)
         default:
             break
+        }
+    }
+
+    private func selectAfterDesignSync(_ target: EditorDocument) {
+        guard target.id != document.id else { return }
+        synchronizeDesign(document) {
+            workspace.select(target)
+        }
+    }
+
+    private func newDocumentAfterDesignSync() {
+        synchronizeDesign(document) {
+            workspace.newDocument()
         }
     }
 

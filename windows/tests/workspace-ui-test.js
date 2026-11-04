@@ -378,6 +378,14 @@ async function main() {
       assert.match(saved, /<table>/);
       assert.match(saved, /border-collapse: collapse/);
       assert.match(saved, /text-align: right/);
+      await page.locator("#autosave-toggle").click();
+      await page.locator('[data-autosave-seconds="30"]').click();
+      assert.equal(await page.evaluate(() => window.__HTMLStudioDiagnostics.autoSaveSeconds()), 30);
+      const sourceWithAutoSaveMarker = `${saved}\n<!-- 自动保存回归标记 -->`;
+      await page.locator("#source-editor").fill(sourceWithAutoSaveMarker);
+      await page.evaluate(() => window.__HTMLStudioDiagnostics.performAutoSave());
+      assert.match(await page.evaluate(() => window.testSavedHTML), /自动保存回归标记/);
+      assert.match(await page.locator("#autosave-status").textContent(), /每 30 秒/);
       const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem("htmlStudioWindowsWorkspaceV3")));
       assert.ok(persisted.documents.some((item) => item.id === "old-draft"), "外部启动必须保留未打开草稿供以后恢复");
       assert.ok(!persisted.documents.some((item) => item.id === "old-saved"));
@@ -415,7 +423,7 @@ async function main() {
       await assertLayout(normalPage);
       await normalContext.close();
     }
-    console.log("HTML Studio workspace UI regression tests passed (31 headings, two window sizes, zoom, 12 components, embedded images, annotations, collapsed outline, conversion dropdown, blank startup, manual recovery and save).");
+    console.log("HTML Studio workspace UI regression tests passed (31 headings, two window sizes, autosave, zoom, 12 components, embedded images, annotations, collapsed outline, conversion dropdown, blank startup, manual recovery and save).");
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

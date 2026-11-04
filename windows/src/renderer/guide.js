@@ -145,7 +145,7 @@ window.HTMLStudioGuideHTML = `<!doctype html>
 <body>
   <main>
     <section class="hero">
-      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.16</p>
+      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.17</p>
       <h1>从源码到所见即所得，<br>在一个窗口完成。</h1>
       <p class="lead">HTML Studio 可打开、实时预览和编辑 HTML，并导出 Markdown、Word 与 PDF，或打开 Windows 系统打印对话框。右侧页面支持中文输入法和类似 Word 的格式工具。</p>
       <span class="close-tip">本说明是独立标签页，点击标签上的 × 即可关闭</span>
@@ -166,7 +166,7 @@ window.HTMLStudioGuideHTML = `<!doctype html>
       <article class="card">
         <span class="number">3</span>
         <strong>保存或转换</strong>
-        <p>保存为 HTML；需要交换格式时，可导出 Markdown、Word、保留页面样式的 A4 PDF，或直接打印当前文档。</p>
+        <p>保存为 HTML；也可选择每 30 秒至每 5 分钟自动保存。关闭时会提示处理未保存内容。需要交换格式时，可导出 Markdown、Word、A4 PDF，或直接打印。</p>
       </article>
     </section>
 

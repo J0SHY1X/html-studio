@@ -34,6 +34,8 @@ const ownsInstanceLock = app.requestSingleInstanceLock();
 let rendererReady = false;
 const pendingFilePaths = filePathsFromArguments(process.argv.slice(1));
 let externalFileDispatch = Promise.resolve();
+let windowCloseApproved = false;
+let windowCloseRequestPending = false;
 
 async function readDocumentFiles(filePaths) {
   return Promise.all(filePaths.map(async (filePath) => {
@@ -381,6 +383,8 @@ function createApplicationMenu() {
 
 function createWindow() {
   rendererReady = false;
+  windowCloseApproved = false;
+  windowCloseRequestPending = false;
   mainWindow = new BrowserWindow({
     width: 1480,
     height: 900,
@@ -402,6 +406,13 @@ function createWindow() {
       event.preventDefault();
       mainWindow.setFullScreen(false);
     }
+  });
+  mainWindow.on("close", (event) => {
+    if (windowCloseApproved || !rendererReady) return;
+    event.preventDefault();
+    if (windowCloseRequestPending) return;
+    windowCloseRequestPending = true;
+    mainWindow.webContents.send("window-close-requested");
   });
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
@@ -461,6 +472,23 @@ ipcMain.handle("file:saveHTML", async (_event, request) => {
     filePath,
     baseURL: baseURLForFile(filePath)
   };
+});
+
+ipcMain.handle("file:confirmCloseDocument", async (_event, request) => {
+  const hasFilePath = Boolean(request?.hasFilePath);
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: "question",
+    title: "HTML Studio",
+    message: `要保存对“${safeSuggestedName(request?.name, "未命名.html")}”的更改吗？`,
+    detail: request?.autoSaveEnabled
+      ? "该文档尚未命名或自动保存未能写入，请选择如何处理。"
+      : "自动保存未开启。可以保存/另存、不保存，或取消关闭。",
+    buttons: [hasFilePath ? "保存" : "另存为…", "不保存", "取消"],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true
+  });
+  return ["save", "discard", "cancel"][result.response] || "cancel";
 });
 
 ipcMain.handle("file:exportText", async (_event, request) => {
@@ -638,6 +666,16 @@ ipcMain.handle("window:setTitle", (_event, title) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.setTitle(String(title || "HTML Studio").slice(0, 240));
   }
+});
+
+ipcMain.handle("window:resolveClose", (_event, approved) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!approved) {
+    windowCloseRequestPending = false;
+    return;
+  }
+  windowCloseApproved = true;
+  mainWindow.close();
 });
 
 if (!ownsInstanceLock) {

@@ -25,6 +25,16 @@
       <button id="new-button" title="新建 (Ctrl+N)">新建</button>
       <button id="open-button" title="打开 (Ctrl+O)">打开</button>
       <button id="save-button" class="primary" title="保存 (Ctrl+S)">保存</button>
+      <div class="autosave-dropdown">
+        <button id="autosave-toggle" aria-haspopup="menu" aria-expanded="false" aria-controls="autosave-menu">自动保存：关闭 ▾</button>
+        <div id="autosave-menu" class="autosave-menu" role="menu" hidden>
+          <button data-autosave-seconds="0" role="menuitem">关闭</button>
+          <button data-autosave-seconds="30" role="menuitem">每 30 秒</button>
+          <button data-autosave-seconds="60" role="menuitem">每 1 分钟</button>
+          <button data-autosave-seconds="180" role="menuitem">每 3 分钟</button>
+          <button data-autosave-seconds="300" role="menuitem">每 5 分钟</button>
+        </div>
+      </div>
       <span class="header-separator" aria-hidden="true"></span>
       <button id="undo-button" title="撤销当前编辑区域 (Ctrl+Z)">↶ 撤销</button>
       <button id="redo-button" title="重做当前编辑区域 (Ctrl+Shift+Z / Ctrl+Y)">↷ 重做</button>
@@ -112,7 +122,7 @@
       </section>
 
       <section class="sidebar-footer">
-        <span>Windows 版 · 0.3.16</span>
+        <span>Windows 版 · 0.3.17</span>
         <span>本地离线编辑</span>
         <button id="recover-drafts" hidden>恢复未保存草稿</button>
       </section>
@@ -284,6 +294,7 @@
   <footer class="status-bar">
     <span id="dirty-indicator" class="status-dot clean"></span>
     <span id="save-status">新文档</span>
+    <span id="autosave-status">自动保存：关闭</span>
     <span class="status-spacer"></span>
     <span id="line-count">1 行</span>
     <span id="character-count">0 字符</span>

@@ -1,7 +1,14 @@
 import AppKit
+import Combine
 import HTMLStudioCore
 import SwiftUI
 import UniformTypeIdentifiers
+
+private let htmlStudioAutoSaveHeartbeat = Timer.publish(
+    every: 5,
+    on: .main,
+    in: .common
+).autoconnect()
 
 enum WorkspaceMode: String, CaseIterable, Identifiable {
     case editor = "源码"
@@ -39,6 +46,7 @@ private struct DocumentEditorView: View {
     @ObservedObject var workspace: DocumentWorkspace
     @ObservedObject var document: EditorDocument
     @StateObject private var codeEditorController = CodeEditorController()
+    @AppStorage(AutoSavePreferences.intervalKey) private var autoSaveSeconds = 0.0
 
     @State private var mode: WorkspaceMode = .split
     @State private var showSidebar = true
@@ -58,6 +66,8 @@ private struct DocumentEditorView: View {
     @State private var componentSelection = ""
     @State private var componentSurface: ActiveEditorSurface = .design
     @State private var componentDocumentID: UUID?
+    @State private var lastAutoSaveAt = Date.distantPast
+    @State private var isAutoSaving = false
     @FocusState private var findFieldFocused: Bool
 
     private let conversionService = ConversionService.shared
@@ -172,6 +182,12 @@ private struct DocumentEditorView: View {
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocumentAs)) { _ in
                 saveAsAfterDesignSync(document)
             }
+            .onReceive(htmlStudioAutoSaveHeartbeat) { date in
+                performAutoSaveIfDue(at: date)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .htmlStudioAutoSaveNow)) { _ in
+                performAutoSaveNow()
+            }
     }
 
     private var editorLayout: some View {
@@ -216,6 +232,10 @@ private struct DocumentEditorView: View {
             // been queued before this view existed; otherwise it can reload
             // the page just after the user begins editing and discard that edit.
             document.cancelPendingPreviewReload()
+            ApplicationCloseCoordinator.shared.reset()
+            ApplicationCloseCoordinator.shared.requestHandler = { completion in
+                requestApplicationClose(completion: completion)
+            }
         }
         .onChange(of: document.previewRevision) { _ in
             document.designController.scheduleHTMLLoad(
@@ -226,6 +246,7 @@ private struct DocumentEditorView: View {
         .onDisappear {
             workspace.persistAllDrafts()
         }
+        .background(WindowCloseGuard())
     }
 
     private var header: some View {
@@ -244,7 +265,7 @@ private struct DocumentEditorView: View {
                 .frame(height: 20)
 
             Button {
-                workspace.newDocument()
+                newDocumentAfterDesignSync()
             } label: {
                 Label("新建", systemImage: "doc.badge.plus")
             }
@@ -258,6 +279,28 @@ private struct DocumentEditorView: View {
             } label: {
                 Label("保存", systemImage: "square.and.arrow.down")
             }
+
+            Menu {
+                ForEach(AutoSaveInterval.allCases) { interval in
+                    Button {
+                        configureAutoSave(interval)
+                    } label: {
+                        if interval.rawValue == autoSaveSeconds {
+                            Label(interval.title, systemImage: "checkmark")
+                        } else {
+                            Text(interval.title)
+                        }
+                    }
+                }
+            } label: {
+                Label(
+                    "自动保存：\(AutoSaveInterval.from(seconds: autoSaveSeconds).title)",
+                    systemImage: autoSaveSeconds > 0 ? "clock.badge.checkmark" : "clock"
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("定时写回已保存的 HTML；未命名文档会先要求另存")
 
             Divider()
                 .frame(height: 20)
@@ -795,6 +838,7 @@ private struct DocumentEditorView: View {
             Text("\(document.lineCount) 行")
             Text("\(document.characterCount) 字符")
             Text("UTF-8")
+            Text("自动保存：\(AutoSaveInterval.from(seconds: autoSaveSeconds).title)")
             Divider().frame(height: 14)
             PageZoomControls(controller: document.designController)
                 .disabled(mode == .editor)
@@ -851,10 +895,17 @@ private struct DocumentEditorView: View {
             return
         }
 
+        if autoSaveSeconds > 0, target.fileURL != nil {
+            synchronizeDesign(target) {
+                if save(target) { workspace.close(target) }
+            }
+            return
+        }
+
         let alert = NSAlert()
         alert.messageText = "要保存对“\(target.displayName)”的更改吗？"
         alert.informativeText = "关闭标签页前可以保存；自动草稿和修改日志会继续保留。"
-        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: target.fileURL == nil ? "另存为…" : "保存")
         alert.addButton(withTitle: "不保存并关闭")
         alert.addButton(withTitle: "取消")
 
@@ -906,9 +957,110 @@ private struct DocumentEditorView: View {
         }
     }
 
-    private func saveAsAfterDesignSync(_ target: EditorDocument) {
+    private func saveAsAfterDesignSync(
+        _ target: EditorDocument,
+        completion: ((Bool) -> Void)? = nil
+    ) {
         synchronizeDesign(target) {
-            _ = saveAs(target)
+            completion?(saveAs(target))
+        }
+    }
+
+    private func configureAutoSave(_ interval: AutoSaveInterval) {
+        guard interval != .off else {
+            autoSaveSeconds = 0
+            lastAutoSaveAt = .distantPast
+            return
+        }
+
+        if document.fileURL == nil {
+            saveAsAfterDesignSync(document) { success in
+                guard success else { return }
+                autoSaveSeconds = interval.rawValue
+                lastAutoSaveAt = Date()
+            }
+        } else {
+            autoSaveSeconds = interval.rawValue
+            lastAutoSaveAt = Date()
+        }
+    }
+
+    private func performAutoSaveIfDue(at date: Date) {
+        guard autoSaveSeconds > 0,
+              date.timeIntervalSince(lastAutoSaveAt) >= autoSaveSeconds
+        else { return }
+        performAutoSaveNow(at: date)
+    }
+
+    private func performAutoSaveNow(at date: Date = Date()) {
+        guard autoSaveSeconds > 0, !isAutoSaving else { return }
+        isAutoSaving = true
+        synchronizeDesign(workspace.activeDocument) {
+            for item in workspace.documents where item.isDirty && item.fileURL != nil {
+                do {
+                    try item.save()
+                } catch {
+                    present(error)
+                }
+            }
+            workspace.persistAllDrafts()
+            lastAutoSaveAt = date
+            isAutoSaving = false
+        }
+    }
+
+    private func requestApplicationClose(completion: @escaping (Bool) -> Void) {
+        synchronizeDesign(workspace.activeDocument) {
+            if autoSaveSeconds > 0 {
+                for item in workspace.documents where item.isDirty && item.fileURL != nil {
+                    try? item.save()
+                }
+            }
+            promptToResolveDirtyDocuments(
+                Array(workspace.documents.filter(\.isDirty)),
+                index: 0,
+                completion: completion
+            )
+        }
+    }
+
+    private func promptToResolveDirtyDocuments(
+        _ dirtyDocuments: [EditorDocument],
+        index: Int,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard index < dirtyDocuments.count else {
+            workspace.persistAllDrafts()
+            completion(true)
+            return
+        }
+
+        let target = dirtyDocuments[index]
+        guard target.isDirty else {
+            promptToResolveDirtyDocuments(dirtyDocuments, index: index + 1, completion: completion)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "退出前保存“\(target.displayName)”吗？"
+        alert.informativeText = autoSaveSeconds > 0
+            ? "该文档尚未命名或自动保存未能写入，请选择如何处理。"
+            : "自动保存未开启。可以保存/另存、不保存，或取消退出。"
+        alert.addButton(withTitle: target.fileURL == nil ? "另存为…" : "保存")
+        alert.addButton(withTitle: "不保存")
+        alert.addButton(withTitle: "取消")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            guard save(target) else {
+                completion(false)
+                return
+            }
+            promptToResolveDirtyDocuments(dirtyDocuments, index: index + 1, completion: completion)
+        case .alertSecondButtonReturn:
+            promptToResolveDirtyDocuments(dirtyDocuments, index: index + 1, completion: completion)
+        default:
+            completion(false)
         }
     }
 

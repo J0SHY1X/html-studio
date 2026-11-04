@@ -6,6 +6,80 @@ import WebKit
 
 extension DocumentRegressionTests {
     @Test @MainActor
+    func autoSaveWritesDirtySavedDocument() async throws {
+        _ = NSApplication.shared
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: AutoSavePreferences.intervalKey)
+        defaults.set(AutoSaveInterval.thirtySeconds.rawValue, forKey: AutoSavePreferences.intervalKey)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: AutoSavePreferences.intervalKey)
+            } else {
+                defaults.removeObject(forKey: AutoSavePreferences.intervalKey)
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HTMLStudio-AutoSave-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("autosave.html")
+        try "<html><body><p>初始内容</p></body></html>".write(
+            to: file,
+            atomically: true,
+            encoding: .utf8
+        )
+        let workspace = DocumentWorkspace(
+            draftStore: DraftStore(supportDirectory: root),
+            historyStore: ChangeLogStore(supportDirectory: root)
+        )
+        let document = try workspace.open(file)
+        let host = NSHostingView(rootView: ContentView(workspace: workspace))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680),
+            styleMask: [.titled, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 120_000_000)
+
+        document.updateHTML("<html><body><p>定时自动保存已生效</p></body></html>")
+        #expect(document.isDirty)
+        NotificationCenter.default.post(name: .htmlStudioAutoSaveNow, object: nil)
+        for _ in 0..<80 {
+            if (try? String(contentsOf: file, encoding: .utf8))?.contains("定时自动保存已生效") == true {
+                break
+            }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("定时自动保存已生效"))
+        #expect(!document.isDirty)
+    }
+
+    @Test @MainActor
+    func autoSaveIntervalsAndCloseCoordinatorAreDeterministic() async {
+        #expect(AutoSaveInterval.from(seconds: 30) == .thirtySeconds)
+        #expect(AutoSaveInterval.from(seconds: 60).title == "每 1 分钟")
+        #expect(AutoSaveInterval.from(seconds: 999) == .off)
+
+        let coordinator = ApplicationCloseCoordinator.shared
+        coordinator.reset()
+        coordinator.requestHandler = { completion in completion(true) }
+        let allowed = await withCheckedContinuation { continuation in
+            coordinator.requestClose { continuation.resume(returning: $0) }
+        }
+        #expect(allowed)
+        #expect(coordinator.approvedForTermination)
+        coordinator.reset()
+        coordinator.requestHandler = nil
+    }
+
+    @Test @MainActor
     func switchingDocumentsFlushesPendingVisualInput() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory

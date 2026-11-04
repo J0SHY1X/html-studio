@@ -18,6 +18,7 @@ extension Notification.Name {
     static let htmlStudioFindAndReplace = Notification.Name("HTMLStudio.findAndReplace")
     static let htmlStudioFindNext = Notification.Name("HTMLStudio.findNext")
     static let htmlStudioFindPrevious = Notification.Name("HTMLStudio.findPrevious")
+    static let htmlStudioAutoSaveNow = Notification.Name("HTMLStudio.autoSaveNow")
 }
 
 @MainActor
@@ -58,6 +59,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let coordinator = ApplicationCloseCoordinator.shared
+        if coordinator.approvedForTermination { return .terminateNow }
+        guard coordinator.requestHandler != nil else { return .terminateNow }
+        coordinator.requestClose { allowed in
+            sender.reply(toApplicationShouldTerminate: allowed)
+        }
+        return .terminateLater
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

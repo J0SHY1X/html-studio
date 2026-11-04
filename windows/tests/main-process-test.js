@@ -15,6 +15,7 @@ async function createMain(argumentsList, hasLock = true) {
   const windows = [];
   class BrowserWindow {
     constructor() {
+      this.events = new EventEmitter();
       this.webContents = new EventEmitter();
       this.webContents.send = (...args) => { this.messages.push(args); };
       this.messages = [];
@@ -22,6 +23,8 @@ async function createMain(argumentsList, hasLock = true) {
       windows.push(this);
     }
     loadFile() {}
+    on(name, handler) { this.events.on(name, handler); }
+    close() { this.events.emit("close", { preventDefault: () => {} }); }
     isDestroyed() { return false; }
     isFullScreen() { return this.fullScreen; }
     setFullScreen(value) { this.fullScreen = value; }
@@ -65,11 +68,20 @@ async function main() {
     window.webContents.emit("before-input-event", { preventDefault: () => { prevented = true; } }, { type: "keyDown", key: "Escape" });
     assert.ok(prevented);
     assert.equal(window.fullScreen, false);
+    let closePrevented = false;
+    window.events.emit("close", { preventDefault: () => { closePrevented = true; } });
+    assert.ok(closePrevented);
+    assert.equal(window.messages.at(-1)[0], "window-close-requested");
+    await handlers.get("window:resolveClose")(null, false);
+    const closeRequestCount = window.messages.length;
+    window.events.emit("close", { preventDefault: () => {} });
+    assert.equal(window.messages.length, closeRequestCount + 1, "取消后应允许再次请求关闭");
+    await handlers.get("window:resolveClose")(null, true);
     assert.equal((await handlers.get("file:startup")()).externalLaunch, false);
     const secondary = await createMain([], false);
     assert.equal(secondary.windows.length, 0);
     assert.ok(secondary.app.didQuit);
-    console.log("HTML Studio main process tests passed (explicit file launch, single instance and Escape).");
+    console.log("HTML Studio main process tests passed (explicit file launch, single instance, Escape and guarded close).");
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

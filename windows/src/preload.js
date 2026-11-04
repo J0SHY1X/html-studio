@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("htmlStudioAPI", {
     return () => ipcRenderer.removeListener("open-files", handler);
   },
   saveHTML: (request) => ipcRenderer.invoke("file:saveHTML", request),
+  confirmCloseDocument: (request) => ipcRenderer.invoke("file:confirmCloseDocument", request),
   exportText: (request) => ipcRenderer.invoke("file:exportText", request),
   exportDOCX: (request) => ipcRenderer.invoke("file:exportDOCX", request),
   exportPDF: (request) => ipcRenderer.invoke("file:exportPDF", request),
@@ -23,6 +24,12 @@ contextBridge.exposeInMainWorld("htmlStudioAPI", {
   migrateHistory: (request) => ipcRenderer.invoke("history:migrate", request),
   exportHistory: (request) => ipcRenderer.invoke("history:export", request),
   setWindowTitle: (title) => ipcRenderer.invoke("window:setTitle", title),
+  onWindowCloseRequested: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on("window-close-requested", handler);
+    return () => ipcRenderer.removeListener("window-close-requested", handler);
+  },
+  resolveWindowClose: (approved) => ipcRenderer.invoke("window:resolveClose", Boolean(approved)),
   onMenuCommand: (callback) => {
     const handler = (_event, command) => callback(command);
     ipcRenderer.on("menu-command", handler);

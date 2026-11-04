@@ -32,7 +32,7 @@ for (const relativePath of requiredFiles) {
 const packageJSON = JSON.parse(
   fs.readFileSync(path.join(root, "package.json"), "utf8")
 );
-assert.equal(packageJSON.version, "0.3.16");
+assert.equal(packageJSON.version, "0.3.17");
 assert.equal(packageJSON.build.win.target[0].target, "nsis");
 assert.match(packageJSON.build.nsis.artifactName, /Setup/);
 assert.match(packageJSON.build.portable.artifactName, /Portable/);
@@ -84,6 +84,8 @@ assert.match(rendererHTML, /id="comment-submit"/);
 assert.match(rendererHTML, />文字颜色</);
 assert.match(rendererHTML, /id="highlighter-toggle"/);
 assert.match(rendererHTML, /id="highlighter-menu-toggle"/);
+assert.match(rendererHTML, /id="autosave-toggle"/);
+assert.match(rendererHTML, /data-autosave-seconds="30"/);
 
 const rendererJS = fs.readFileSync(
   path.join(root, "src/renderer/renderer.js"),
@@ -98,6 +100,8 @@ assert.match(rendererJS, /function setPageBackgroundColor/);
 assert.match(rendererJS, /function setTableBackgroundColor/);
 assert.match(rendererJS, /overflow-y: scroll !important/);
 assert.match(rendererJS, /function captureDesignHTML/);
+assert.match(rendererJS, /function performAutoSave/);
+assert.match(rendererJS, /function resolveDirtyDocumentsForClose/);
 assert.match(rendererJS, /window\.htmlStudioAPI\.appendHistory/);
 assert.match(rendererJS, /workspaceState\.documents/);
 assert.match(rendererJS, /function createGuideDocument/);

@@ -20,6 +20,19 @@ const starterHTML = `<!doctype html>
 </html>`;
 
 const workspaceStorageKey = "htmlStudioWindowsWorkspaceV3";
+const autoSaveStorageKey = "htmlStudioWindowsAutoSaveSeconds";
+const autoSaveIntervals = new Map([
+  [0, "关闭"], [30, "每 30 秒"], [60, "每 1 分钟"],
+  [180, "每 3 分钟"], [300, "每 5 分钟"]
+]);
+let autoSaveSeconds = 0;
+try {
+  const storedAutoSaveSeconds = Number(localStorage.getItem(autoSaveStorageKey) || 0);
+  if (autoSaveIntervals.has(storedAutoSaveSeconds)) autoSaveSeconds = storedAutoSaveSeconds;
+} catch {}
+let lastAutoSaveAt = Date.now();
+let autoSaveInProgress = false;
+let windowCloseInProgress = false;
 const inputActionNames = {
   deleteByCut: "剪切内容",
   insertFromPaste: "粘贴内容",
@@ -107,6 +120,9 @@ const elements = {
   historyHTML: document.querySelector("#history-html"),
   restoreHistoryButton: document.querySelector("#restore-history-button"),
   saveButton: document.querySelector("#save-button"),
+  autoSaveToggle: document.querySelector("#autosave-toggle"),
+  autoSaveMenu: document.querySelector("#autosave-menu"),
+  autoSaveStatus: document.querySelector("#autosave-status"),
   undoButton: document.querySelector("#undo-button"),
   redoButton: document.querySelector("#redo-button"),
   findButton: document.querySelector("#find-button"),
@@ -250,6 +266,15 @@ function showToast(message) {
   workspaceState.toastTimer = setTimeout(() => {
     elements.toast.classList.remove("visible");
   }, 2600);
+}
+
+function updateAutoSaveUI() {
+  const label = autoSaveIntervals.get(autoSaveSeconds) || "关闭";
+  elements.autoSaveToggle.textContent = `自动保存：${label} ▾`;
+  elements.autoSaveStatus.textContent = `自动保存：${label}`;
+  elements.autoSaveMenu.querySelectorAll("[data-autosave-seconds]").forEach((button) => {
+    button.classList.toggle("selected", Number(button.dataset.autosaveSeconds) === autoSaveSeconds);
+  });
 }
 
 function persistWorkspace() {
@@ -581,15 +606,33 @@ function selectDocument(documentValue) {
   persistWorkspace();
 }
 
-function closeDocument(documentValue) {
+async function closeDocument(documentValue) {
   if (!documentValue) return;
   if (documentValue === activeDocument()) flushDesignCapture(documentValue);
-  if (documentValue.dirty && !window.confirm(
-    `“${fileName(documentValue)}”有未保存更改。\n\n确定要不保存并关闭此标签页吗？`
-  )) {
-    return;
+  if (documentValue.dirty && autoSaveSeconds > 0 && documentValue.filePath) {
+    await saveDocumentValue(documentValue, false, { silent: true, action: "自动保存 HTML" });
   }
+  if (documentValue.dirty) {
+    const action = window.htmlStudioAPI.confirmCloseDocument
+      ? await window.htmlStudioAPI.confirmCloseDocument({
+        name: fileName(documentValue),
+        hasFilePath: Boolean(documentValue.filePath),
+        autoSaveEnabled: autoSaveSeconds > 0
+      })
+      : (window.confirm(`“${fileName(documentValue)}”有未保存更改。\n\n确定要不保存并关闭此标签页吗？`) ? "discard" : "cancel");
+    if (action === "cancel") return;
+    if (action === "save" && !await saveDocumentValue(
+      documentValue,
+      !documentValue.filePath,
+      { silent: false }
+    )) return;
+  }
+  removeDocument(documentValue);
+}
+
+function removeDocument(documentValue) {
   const index = workspaceState.documents.indexOf(documentValue);
+  if (index < 0) return;
   workspaceState.documents.splice(index, 1);
   if (workspaceState.lastUserDocumentId === documentValue.id) {
     workspaceState.lastUserDocumentId =
@@ -2104,13 +2147,12 @@ async function openDocumentResults(results) {
   }
 }
 
-async function saveDocument(saveAs = false) {
-  const documentValue = activeDocument();
+async function saveDocumentValue(documentValue, saveAs = false, options = {}) {
   if (isGuide(documentValue)) {
-    showToast("使用说明是内置页面，无需保存。");
+    if (!options.silent) showToast("使用说明是内置页面，无需保存。");
     return false;
   }
-  flushDesignCapture(documentValue);
+  if (documentValue === activeDocument()) flushDesignCapture(documentValue);
   try {
     const oldKey = documentValue.historyKey;
     const result = await window.htmlStudioAPI.saveHTML({
@@ -2124,7 +2166,7 @@ async function saveDocument(saveAs = false) {
     documentValue.importedName = null;
     documentValue.baseURL = result.baseURL;
     documentValue.savedHTML = documentValue.html;
-    updateDocumentInfo();
+    if (documentValue === activeDocument()) updateDocumentInfo();
     setDirty(false, documentValue);
     if (oldKey) {
       const migrated = await window.htmlStudioAPI.migrateHistory({
@@ -2137,15 +2179,94 @@ async function saveDocument(saveAs = false) {
     }
     await appendHistory(
       documentValue,
-      saveAs ? "另存为 HTML" : "保存 HTML",
+      options.action || (saveAs ? "另存为 HTML" : "保存 HTML"),
       "文件",
       fileName(documentValue)
     );
-    showToast("HTML 已保存。");
+    if (!options.silent) showToast("HTML 已保存。");
     return true;
   } catch (error) {
-    showToast(`保存失败：${error.message}`);
+    if (!options.silent) showToast(`保存失败：${error.message}`);
     return false;
+  }
+}
+
+async function saveDocument(saveAs = false) {
+  return saveDocumentValue(activeDocument(), saveAs);
+}
+
+async function configureAutoSave(seconds) {
+  const next = Number(seconds);
+  if (!autoSaveIntervals.has(next)) return;
+  if (next > 0) {
+    const documentValue = activeDocument();
+    if (documentValue && !isGuide(documentValue) && !documentValue.filePath) {
+      if (!await saveDocumentValue(documentValue, true)) return;
+    }
+  }
+  autoSaveSeconds = next;
+  lastAutoSaveAt = Date.now();
+  try { localStorage.setItem(autoSaveStorageKey, String(next)); } catch {}
+  updateAutoSaveUI();
+  showToast(next > 0 ? `已开启自动保存：${autoSaveIntervals.get(next)}。` : "已关闭自动保存。");
+}
+
+async function performAutoSave(force = false) {
+  if (autoSaveSeconds <= 0 || autoSaveInProgress) return false;
+  const now = Date.now();
+  if (!force && now - lastAutoSaveAt < autoSaveSeconds * 1000) return false;
+  autoSaveInProgress = true;
+  try {
+    flushDesignCapture(activeDocument());
+    let savedCount = 0;
+    for (const documentValue of workspaceState.documents) {
+      if (isGuide(documentValue) || !documentValue.dirty || !documentValue.filePath) continue;
+      if (await saveDocumentValue(documentValue, false, {
+        silent: true,
+        action: "自动保存 HTML"
+      })) savedCount += 1;
+    }
+    lastAutoSaveAt = now;
+    persistWorkspace();
+    if (savedCount) showToast(`已自动保存 ${savedCount} 个文档。`);
+    return true;
+  } finally {
+    autoSaveInProgress = false;
+  }
+}
+
+async function resolveDirtyDocumentsForClose() {
+  flushDesignCapture(activeDocument());
+  if (autoSaveSeconds > 0) await performAutoSave(true);
+  for (const documentValue of workspaceState.documents) {
+    if (isGuide(documentValue) || !documentValue.dirty) continue;
+    const action = await window.htmlStudioAPI.confirmCloseDocument({
+      name: fileName(documentValue),
+      hasFilePath: Boolean(documentValue.filePath),
+      autoSaveEnabled: autoSaveSeconds > 0
+    });
+    if (action === "cancel") return false;
+    if (action === "save" && !await saveDocumentValue(
+      documentValue,
+      !documentValue.filePath,
+      { silent: false }
+    )) return false;
+  }
+  persistWorkspace();
+  return true;
+}
+
+async function handleWindowCloseRequest() {
+  if (windowCloseInProgress) return;
+  windowCloseInProgress = true;
+  try {
+    const approved = await resolveDirtyDocumentsForClose();
+    await window.htmlStudioAPI.resolveWindowClose(approved);
+  } catch (error) {
+    showToast(`关闭检查失败：${error.message}`);
+    await window.htmlStudioAPI.resolveWindowClose(false);
+  } finally {
+    windowCloseInProgress = false;
   }
 }
 
@@ -2943,6 +3064,18 @@ document.querySelector("#new-button").addEventListener("click", newDocument);
 elements.addTabButton.addEventListener("click", newDocument);
 document.querySelector("#open-button").addEventListener("click", openDocument);
 document.querySelector("#save-button").addEventListener("click", () => saveDocument(false));
+elements.autoSaveToggle.addEventListener("click", (event) => {
+  event.stopPropagation();
+  elements.autoSaveMenu.hidden = !elements.autoSaveMenu.hidden;
+  elements.autoSaveToggle.setAttribute("aria-expanded", String(!elements.autoSaveMenu.hidden));
+});
+elements.autoSaveMenu.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-autosave-seconds]");
+  if (!button) return;
+  elements.autoSaveMenu.hidden = true;
+  elements.autoSaveToggle.setAttribute("aria-expanded", "false");
+  configureAutoSave(button.dataset.autosaveSeconds);
+});
 elements.undoButton.addEventListener("mousedown", (event) => event.preventDefault());
 elements.redoButton.addEventListener("mousedown", (event) => event.preventDefault());
 elements.undoButton.addEventListener("click", () => performHistoryCommand("undo"));
@@ -3026,8 +3159,6 @@ window.htmlStudioAPI.onMenuCommand((command) => {
   };
   handlers[command]?.();
 });
-
-window.addEventListener("beforeunload", persistWorkspace);
 
 window.addEventListener("keydown", (event) => {
   if (componentDialog.open || document.querySelector("#comment-dialog").open) return;
@@ -3181,6 +3312,12 @@ function setConversionMenu(show) {
 conversionToggle.onclick=()=>setConversionMenu(conversionMenu.hidden);
 conversionMenu.addEventListener("click",event=>{if(event.target.closest("button"))setConversionMenu(false);});
 document.addEventListener("click",event=>{if(!event.target.closest(".conversion-dropdown"))setConversionMenu(false);});
+document.addEventListener("click",event=>{
+  if (!event.target.closest(".autosave-dropdown")) {
+    elements.autoSaveMenu.hidden=true;
+    elements.autoSaveToggle.setAttribute("aria-expanded","false");
+  }
+});
 document.addEventListener("keydown",event=>{
   if(event.key==="Escape" && !conversionMenu.hidden){setConversionMenu(false);conversionToggle.focus();}
   if(event.key==="ArrowDown" && event.target===conversionToggle){event.preventDefault();setConversionMenu(true);conversionMenu.querySelector("button").focus();}
@@ -3235,8 +3372,14 @@ window.__HTMLStudioDiagnostics = {
     };
   },
   flushDesignCapture,
-  applyHighlighterSelection
+  applyHighlighterSelection,
+  performAutoSave: () => performAutoSave(true),
+  autoSaveSeconds: () => autoSaveSeconds
 };
+
+updateAutoSaveUI();
+setInterval(() => { void performAutoSave(false); }, 5_000);
+window.htmlStudioAPI.onWindowCloseRequested?.(() => { void handleWindowCloseRequest(); });
 
 window.addEventListener("beforeunload", () => {
   flushDesignCapture();

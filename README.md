@@ -8,6 +8,14 @@ A local-first HTML source and visual editor for macOS and Windows, with Markdown
 
 [下载发布版](https://github.com/J0SHY1X/html-studio/releases) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
 
+## 0.3.17 更新
+
+- 新增可选定时自动保存：关闭（默认）、每 30 秒、每 1 分钟、每 3 分钟、每 5 分钟；设置对下次启动继续有效。
+- 开启自动保存时，已保存的脏文档会定时写回原 HTML；未命名文档会先弹出“另存为”。
+- 未开启自动保存时，关闭标签页、窗口或退出应用会逐个提示保存/另存、不保存或取消，避免遗漏后台标签页。
+- 开启自动保存后，关闭时先自动写回有路径的文档；未命名或写入失败的文档仍会提示处理。
+- Mac 与 Windows 免安装版同步更新为 0.3.17，并加入自动保存与关闭保护回归测试。
+
 ## 0.3.16 更新
 
 - 大型 HTML 的可视化输入改为轻量脏标记与自适应合并同步；输入期间不再反复克隆、序列化整份 DOM，保存、切换文档、导出和打印前会强制同步最后修改。
@@ -63,6 +71,7 @@ A local-first HTML source and visual editor for macOS and Windows, with Markdown
 - 右侧预览始终显示可拖拽的纵向滚动条，并支持修改当前页面或光标所在表格的底色。
 - 保存 HTML，导出 Markdown、DOCX、分页 PDF，以及系统打印。
 - 本地自动草稿、修改日志、完整 HTML 快照和历史恢复。
+- 可选定时自动保存，以及关闭标签页/窗口/应用时的未保存内容保护。
 - Windows 帮助菜单可打开使用说明，启动默认显示空白文档。
 
 本项目包含两个独立实现，不是同一个跨平台二进制：

@@ -61,6 +61,23 @@ const commandActionNames = {
   formatBlock: "修改段落样式"
 };
 
+const editorColorPalettes = {
+  text: [
+    ["黑色", "#111827"], ["深灰", "#4B5563"], ["红色", "#DC2626"],
+    ["橙色", "#EA580C"], ["金色", "#CA8A04"], ["绿色", "#15803D"],
+    ["蓝色", "#2563EB"], ["紫色", "#7C3AED"], ["白色", "#FFFFFF"]
+  ],
+  surface: [
+    ["白色", "#FFFFFF"], ["浅灰", "#F3F4F6"], ["淡黄", "#FEF3C7"],
+    ["浅绿", "#DCFCE7"], ["浅蓝", "#DBEAFE"], ["淡紫", "#F3E8FF"],
+    ["淡橙", "#FFEDD5"], ["淡红", "#FEE2E2"]
+  ],
+  highlighter: [
+    ["淡黄", "#FFF3A3"], ["浅绿", "#CFF7D3"], ["淡紫", "#E7D7FF"],
+    ["品红", "#FFB3DE"], ["浅蓝", "#BFE8FF"], ["淡橙", "#FFD3A8"]
+  ]
+};
+
 const elements = {
   source: document.querySelector("#source-editor"),
   frame: document.querySelector("#design-frame"),
@@ -79,8 +96,6 @@ const elements = {
   toast: document.querySelector("#toast"),
   tableMenu: document.querySelector("#table-menu"),
   pageMenu: document.querySelector("#page-menu"),
-  tableBackgroundColor: document.querySelector("#table-background-color"),
-  pageBackgroundColor: document.querySelector("#page-background-color"),
   tabList: document.querySelector("#document-tab-list"),
   addTabButton: document.querySelector("#add-tab-button"),
   contextMenu: document.querySelector("#context-menu"),
@@ -166,6 +181,17 @@ function createDocument(values = {}) {
     savedRange: null,
     activePage: null,
     pendingAction: null,
+    designDirty: false,
+    pendingDesignAction: "编辑可视化页面",
+    highlighterActive: Boolean(values.highlighterActive),
+    highlighterColor: typeof values.highlighterColor === "string"
+      ? values.highlighterColor
+      : "#FFF3A3",
+    isApplyingHighlighter: false,
+    analysisTimer: null,
+    persistTimer: null,
+    snapshotCount: 0,
+    lastSnapshotDurationMs: 0,
     sourceRenderTimer: null,
     visualCaptureTimer: null,
     historyTimer: null,
@@ -251,7 +277,9 @@ function persistWorkspace() {
       dirty: documentValue.dirty,
       savedHTML: documentValue.savedHTML,
       editEnabled: documentValue.editEnabled,
-      zoomPercent: documentValue.zoomPercent
+      zoomPercent: documentValue.zoomPercent,
+      highlighterActive: documentValue.highlighterActive,
+      highlighterColor: documentValue.highlighterColor
     }))
   };
   try {
@@ -283,6 +311,48 @@ function setDirty(value, documentValue = activeDocument()) {
   }
   renderTabs();
   persistWorkspace();
+}
+
+function refreshDirtyPresentation(documentValue = activeDocument()) {
+  if (!documentValue || documentValue !== activeDocument()) return;
+  elements.dirtyIndicator.classList.toggle("dirty", documentValue.dirty);
+  elements.dirtyIndicator.classList.toggle("clean", !documentValue.dirty);
+  elements.saveStatus.textContent = isGuide(documentValue)
+    ? "内置使用说明"
+    : (documentValue.dirty
+      ? "有未保存更改"
+      : (documentValue.filePath ? "已保存" : "新文档"));
+  updateWindowTitle();
+}
+
+function markDocumentDirty(documentValue = activeDocument()) {
+  if (!documentValue || isGuide(documentValue)) return;
+  const changed = !documentValue.dirty;
+  documentValue.dirty = true;
+  refreshDirtyPresentation(documentValue);
+  if (changed) renderTabs();
+}
+
+function scheduleWorkspacePersistence(documentValue = activeDocument()) {
+  if (!documentValue || isGuide(documentValue)) return;
+  clearTimeout(documentValue.persistTimer);
+  const delay = documentValue.html.length > 500_000 ? 1_800 : 850;
+  documentValue.persistTimer = setTimeout(() => {
+    documentValue.persistTimer = null;
+    persistWorkspace();
+  }, delay);
+}
+
+function scheduleDocumentAnalysis(documentValue = activeDocument()) {
+  if (!documentValue) return;
+  clearTimeout(documentValue.analysisTimer);
+  const delay = documentValue.html.length > 500_000 ? 900 : 350;
+  documentValue.analysisTimer = setTimeout(() => {
+    documentValue.analysisTimer = null;
+    if (documentValue !== activeDocument()) return;
+    updateStats();
+    updateOutline();
+  }, delay);
 }
 
 function updateDocumentInfo() {
@@ -422,6 +492,7 @@ function refreshActiveDocument() {
   updateOutline();
   setDirty(documentValue.dirty, documentValue);
   renderPreview();
+  updateHighlighterUI();
   clearFindState();
   if (!elements.findBar.hidden) {
     updateFindControls();
@@ -502,6 +573,7 @@ function openComponentDialog(kind = "link", surface = null) {
 function selectDocument(documentValue) {
   if (!documentValue || documentValue.id === workspaceState.selectedDocumentId) return;
   saveSelection();
+  flushDesignCapture(activeDocument());
   workspaceState.selectedDocumentId = documentValue.id;
   if (!isGuide(documentValue)) workspaceState.lastUserDocumentId = documentValue.id;
   workspaceState.selectedHistoryId = null;
@@ -511,6 +583,7 @@ function selectDocument(documentValue) {
 
 function closeDocument(documentValue) {
   if (!documentValue) return;
+  if (documentValue === activeDocument()) flushDesignCapture(documentValue);
   if (documentValue.dirty && !window.confirm(
     `“${fileName(documentValue)}”有未保存更改。\n\n确定要不保存并关闭此标签页吗？`
   )) {
@@ -568,6 +641,7 @@ function injectEditorSupport(html) {
       background-clip: padding-box;
     }
     body[data-html-studio-editing="true"] { min-height: 100vh !important; cursor: text; }
+    body[data-html-studio-editing="true"][data-html-studio-highlighter="true"] { cursor: crosshair; }
     body[data-html-studio-editing="true"]:focus { outline: none; }
     body[data-html-studio-editing="true"] *:hover { outline: 1px dashed rgba(59,130,246,.3); outline-offset: 2px; }
     body[data-html-studio-editing="true"] [data-html-studio-active-page] {
@@ -585,9 +659,12 @@ function schedulePreviewRender() {
   const documentValue = activeDocument();
   if (!documentValue || documentValue.isComposing) return;
   clearTimeout(documentValue.sourceRenderTimer);
+  const delay = documentValue.html.length > 500_000
+    ? 1_200
+    : (documentValue.html.length > 150_000 ? 650 : 250);
   documentValue.sourceRenderTimer = setTimeout(() => {
     if (documentValue === activeDocument()) renderPreview();
-  }, 180);
+  }, delay);
 }
 
 function renderPreview() {
@@ -623,6 +700,7 @@ function setDesignEditable() {
   if (changed) frameDocument.body.contentEditable = editableValue;
   frameDocument.body.spellcheck = editable;
   frameDocument.body.dataset.htmlStudioEditing = editableValue;
+  frameDocument.body.dataset.htmlStudioHighlighter = state.highlighterActive ? "true" : "false";
   elements.designStatus.textContent = isGuide()
     ? "使用说明（只读）"
     : (editable
@@ -730,7 +808,11 @@ async function appendHistory(documentValue, action, source, summary) {
     html: documentValue.html
   };
   documentValue.historyEntries.push(entry);
-  documentValue.historyEntries = documentValue.historyEntries.slice(-120);
+  const historyLimit = Math.max(
+    8,
+    Math.min(120, Math.floor(18_000_000 / Math.max(1, documentValue.html.length)))
+  );
+  documentValue.historyEntries = documentValue.historyEntries.slice(-historyLimit);
   try {
     documentValue.historyEntries = await window.htmlStudioAPI.appendHistory({
       key: documentValue.historyKey,
@@ -746,9 +828,10 @@ async function appendHistory(documentValue, action, source, summary) {
 
 function scheduleHistory(documentValue, action, source, summary) {
   clearTimeout(documentValue.historyTimer);
+  const delay = documentValue.html.length > 500_000 ? 1_800 : 650;
   documentValue.historyTimer = setTimeout(() => {
     appendHistory(documentValue, action, source, summary);
-  }, 650);
+  }, delay);
 }
 
 async function initializeHistory(
@@ -784,6 +867,7 @@ function captureDesignHTML(action = "编辑可视化页面") {
   const frameDocument = designDocument();
   if (!documentValue || isGuide(documentValue) || documentValue.isComposing ||
       !frameDocument?.documentElement) return;
+  const startedAt = performance.now();
   const previousCount = documentValue.html.length;
   saveSelection();
   const clone = frameDocument.documentElement.cloneNode(true);
@@ -797,12 +881,16 @@ function captureDesignHTML(action = "编辑可视化页面") {
     body.removeAttribute("contenteditable");
     body.removeAttribute("spellcheck");
     body.removeAttribute("data-html-studio-editing");
+    body.removeAttribute("data-html-studio-highlighter");
   }
   documentValue.html = `<!DOCTYPE html>\n${clone.outerHTML}`;
+  documentValue.snapshotCount += 1;
+  documentValue.lastSnapshotDurationMs = performance.now() - startedAt;
+  documentValue.designDirty = false;
+  documentValue.visualCaptureTimer = null;
   elements.source.value = documentValue.html;
-  updateStats();
-  updateOutline();
-  renderComments();
+  scheduleDocumentAnalysis(documentValue);
+  if (!document.querySelector("#comments-panel").hidden) renderComments();
   setDirty(true, documentValue);
   scheduleHistory(
     documentValue,
@@ -815,10 +903,25 @@ function captureDesignHTML(action = "编辑可视化页面") {
 function scheduleDesignCapture(action = "编辑可视化页面") {
   const documentValue = activeDocument();
   if (!documentValue || documentValue.isComposing || isGuide(documentValue)) return;
+  documentValue.pendingDesignAction = action || documentValue.pendingDesignAction;
+  documentValue.designDirty = true;
+  markDocumentDirty(documentValue);
   clearTimeout(documentValue.visualCaptureTimer);
+  const elementCount = designDocument()?.getElementsByTagName("*").length || 0;
+  const delay = elementCount > 5_000 ? 1_200 : (elementCount > 1_500 ? 700 : 350);
   documentValue.visualCaptureTimer = setTimeout(() => {
-    if (documentValue === activeDocument()) captureDesignHTML(action);
-  }, 100);
+    if (documentValue === activeDocument()) {
+      captureDesignHTML(documentValue.pendingDesignAction);
+    }
+  }, delay);
+}
+
+function flushDesignCapture(documentValue = activeDocument()) {
+  if (!documentValue || documentValue !== activeDocument() || isGuide(documentValue)) return;
+  if (!documentValue.designDirty && !documentValue.visualCaptureTimer) return;
+  clearTimeout(documentValue.visualCaptureTimer);
+  documentValue.visualCaptureTimer = null;
+  captureDesignHTML(documentValue.pendingDesignAction || "编辑可视化页面");
 }
 
 function prepareCommand() {
@@ -850,6 +953,341 @@ function executeCommand(command, value = null, action = null) {
   scheduleDesignCapture(action || commandActionNames[command] || "执行编辑命令");
 }
 
+function updateHighlighterUI() {
+  const active = Boolean(state.highlighterActive);
+  const color = state.highlighterColor || "#FFF3A3";
+  const erasing = color === "transparent";
+  const main = document.querySelector("#highlighter-toggle");
+  main.classList.toggle("active", active);
+  main.setAttribute("aria-pressed", String(active));
+  document.querySelector("#highlighter-label").textContent = erasing ? "擦除高亮" : "荧光笔";
+  const preview = document.querySelector("#highlighter-preview");
+  preview.style.background = erasing
+    ? "linear-gradient(135deg,#fff 0 45%,#ef4444 46% 54%,#fff 55%)"
+    : color;
+  const frameDocument = designDocument();
+  if (frameDocument?.body) {
+    frameDocument.body.dataset.htmlStudioHighlighter = active ? "true" : "false";
+  }
+}
+
+function setHighlighterColor(value) {
+  state.highlighterColor = value || "transparent";
+  state.highlighterActive = true;
+  updateHighlighterUI();
+  scheduleWorkspacePersistence();
+}
+
+function toggleHighlighter() {
+  if (isGuide()) return;
+  state.highlighterActive = !state.highlighterActive;
+  updateHighlighterUI();
+  scheduleWorkspacePersistence();
+  showToast(state.highlighterActive
+    ? (state.highlighterColor === "transparent"
+      ? "擦除高亮已开启：拖动选择文字即可恢复背景。"
+      : "荧光笔已开启：拖动选择文字即可涂刷。")
+    : "荧光笔已关闭。");
+}
+
+function applyHighlighterSelection() {
+  if (!state.highlighterActive || state.isComposing || !state.editEnabled || isGuide()) return false;
+  const frameDocument = designDocument();
+  const selection = designWindow()?.getSelection();
+  if (!frameDocument || !selection?.rangeCount || selection.isCollapsed) return false;
+  const range = selection.getRangeAt(0);
+  if (!isRangeValid(range)) return false;
+  state.savedRange = range.cloneRange();
+  state.isApplyingHighlighter = true;
+  let result = false;
+  try {
+    frameDocument.execCommand("styleWithCSS", false, true);
+    result = frameDocument.execCommand(
+      "hiliteColor",
+      false,
+      state.highlighterColor === "transparent" ? "transparent" : state.highlighterColor
+    );
+  } finally {
+    state.isApplyingHighlighter = false;
+  }
+  if (!result) return false;
+  const collapsed = selection.rangeCount
+    ? selection.getRangeAt(0).cloneRange()
+    : range.cloneRange();
+  collapsed.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(collapsed);
+  state.savedRange = collapsed.cloneRange();
+  scheduleDesignCapture(
+    state.highlighterColor === "transparent" ? "擦除文字高亮" : "使用荧光笔"
+  );
+  return true;
+}
+
+function customColorStorageKey(paletteID) {
+  return `htmlStudio.customColors.${paletteID}`;
+}
+
+function readCustomColors(paletteID) {
+  try {
+    const values = JSON.parse(localStorage.getItem(customColorStorageKey(paletteID)) || "[]");
+    return Array.isArray(values) ? values.filter((value) => /^#[0-9a-f]{6}$/i.test(value)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberCustomColor(paletteID, value) {
+  const normalized = String(value).toUpperCase();
+  const values = readCustomColors(paletteID)
+    .filter((item) => item.toUpperCase() !== normalized);
+  values.unshift(normalized);
+  localStorage.setItem(customColorStorageKey(paletteID), JSON.stringify(values.slice(0, 10)));
+}
+
+function closeColorPanels(except = null) {
+  document.querySelectorAll(".color-palette-panel").forEach((panel) => {
+    if (panel !== except) panel.hidden = true;
+  });
+  document.querySelector("#highlighter-menu-toggle")
+    ?.setAttribute("aria-expanded", String(except === document.querySelector("#highlighter-panel")));
+}
+
+function positionColorPanel(toggle, panel) {
+  const rect = toggle.getBoundingClientRect();
+  const width = 270;
+  const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left));
+  const preferredTop = rect.bottom + 5;
+  const panelHeight = Math.min(
+    panel.getBoundingClientRect().height || 220,
+    window.innerHeight - 16
+  );
+  const top = preferredTop + panelHeight <= window.innerHeight - 8
+    ? preferredTop
+    : Math.max(8, rect.top - panelHeight - 5);
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+  panel.style.marginTop = "0";
+}
+
+function positionToolbarMenu(details) {
+  if (!details?.open) return;
+  const summary = details.querySelector("summary");
+  const panel = details.querySelector(".table-menu-panel,.toolbar-menu-panel");
+  if (!summary || !panel) return;
+  const rect = summary.getBoundingClientRect();
+  const width = panel.getBoundingClientRect().width || 200;
+  const height = Math.min(
+    panel.getBoundingClientRect().height || 320,
+    window.innerHeight - 16
+  );
+  panel.style.left = `${Math.max(8, Math.min(window.innerWidth - width - 8, rect.left))}px`;
+  panel.style.top = `${rect.bottom + height <= window.innerHeight - 8
+    ? rect.bottom + 4
+    : Math.max(8, rect.top - height - 4)}px`;
+  panel.style.marginTop = "0";
+}
+
+function createColorPalette({
+  paletteID,
+  toggleID,
+  panelID,
+  previewID,
+  colors,
+  selected,
+  clearLabel = null,
+  onApply
+}) {
+  const toggle = document.querySelector(`#${toggleID}`);
+  const panel = document.querySelector(`#${panelID}`);
+  const preview = document.querySelector(`#${previewID}`);
+  let selectedColor = selected;
+
+  const apply = (value, shouldRender = true) => {
+    selectedColor = value || "transparent";
+    if (preview) {
+      preview.style.background = selectedColor === "transparent"
+        ? "linear-gradient(135deg,#fff 0 45%,#ef4444 46% 54%,#fff 55%)"
+        : selectedColor;
+    }
+    onApply(value);
+    if (shouldRender) render();
+  };
+
+  const swatchButton = (name, value, custom = false) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "palette-swatch";
+    button.title = custom ? `自定义颜色 ${value}` : name;
+    button.style.setProperty("--swatch", value);
+    button.classList.toggle("selected", selectedColor.toUpperCase() === value.toUpperCase());
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", () => apply(value));
+    return button;
+  };
+
+  const render = () => {
+    panel.replaceChildren();
+    const heading = document.createElement("strong");
+    heading.textContent = toggle.textContent.trim();
+    const hint = document.createElement("small");
+    hint.textContent = "点选后立即应用，可继续尝试其他颜色。";
+    const grid = document.createElement("div");
+    grid.className = "palette-grid";
+    colors.forEach(([name, value]) => grid.appendChild(swatchButton(name, value)));
+    readCustomColors(paletteID).forEach((value) => {
+      grid.appendChild(swatchButton(value, value, true));
+    });
+    const actions = document.createElement("div");
+    actions.className = "palette-actions";
+    if (clearLabel) {
+      const clear = document.createElement("button");
+      clear.type = "button";
+      clear.textContent = clearLabel;
+      clear.addEventListener("mousedown", (event) => event.preventDefault());
+      clear.addEventListener("click", () => apply(null));
+      actions.appendChild(clear);
+    }
+    const customLabel = document.createElement("label");
+    customLabel.className = "custom-color-button";
+    customLabel.textContent = "更多颜色…";
+    const customInput = document.createElement("input");
+    customInput.type = "color";
+    customInput.value = /^#[0-9a-f]{6}$/i.test(selectedColor) ? selectedColor : "#FFFFFF";
+    customInput.addEventListener("input", () => apply(customInput.value, false));
+    customInput.addEventListener("change", () => {
+      rememberCustomColor(paletteID, customInput.value);
+      selectedColor = customInput.value;
+      render();
+    });
+    customLabel.appendChild(customInput);
+    actions.appendChild(customLabel);
+    const done = document.createElement("button");
+    done.type = "button";
+    done.textContent = "完成";
+    done.className = "palette-done";
+    done.addEventListener("click", () => {
+      panel.hidden = true;
+      panel.closest("details")?.removeAttribute("open");
+    });
+    actions.appendChild(done);
+    panel.append(heading, hint, grid, actions);
+  };
+
+  toggle.addEventListener("mousedown", (event) => event.preventDefault());
+  toggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const opening = panel.hidden;
+    closeColorPanels(opening ? panel : null);
+    panel.hidden = !opening;
+    render();
+    if (opening) positionColorPanel(toggle, panel);
+  });
+  if (preview) preview.style.background = selectedColor;
+  render();
+  return { apply, panel, render };
+}
+
+function initializeColorTools() {
+  createColorPalette({
+    paletteID: "text",
+    toggleID: "text-color-toggle",
+    panelID: "text-color-panel",
+    previewID: "text-color-preview",
+    colors: editorColorPalettes.text,
+    selected: "#111827",
+    onApply: (value) => executeCommand("foreColor", value)
+  });
+  createColorPalette({
+    paletteID: "page-background",
+    toggleID: "page-background-toggle",
+    panelID: "page-background-panel",
+    previewID: "page-background-preview",
+    colors: editorColorPalettes.surface,
+    selected: "#FFFFFF",
+    clearLabel: "恢复原页面底色",
+    onApply: (value) => setPageBackgroundColor(value || "transparent")
+  });
+  createColorPalette({
+    paletteID: "table-background",
+    toggleID: "table-background-toggle",
+    panelID: "table-background-panel",
+    previewID: "table-background-preview",
+    colors: editorColorPalettes.surface,
+    selected: "#FFFFFF",
+    clearLabel: "恢复原表格底色",
+    onApply: (value) => setTableBackgroundColor(value || "transparent")
+  });
+
+  const highlighterPanel = document.querySelector("#highlighter-panel");
+  const highlighterMenu = document.querySelector("#highlighter-menu-toggle");
+  const renderHighlighters = () => {
+    highlighterPanel.replaceChildren();
+    const heading = document.createElement("strong");
+    heading.textContent = "六色荧光笔";
+    const hint = document.createElement("small");
+    hint.textContent = "选色后拖动文字即可涂刷；主按钮用于结束。";
+    const grid = document.createElement("div");
+    grid.className = "palette-grid";
+    editorColorPalettes.highlighter.forEach(([name, value]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "palette-swatch";
+      button.title = name;
+      button.style.setProperty("--swatch", value);
+      button.classList.toggle(
+        "selected",
+        state.highlighterColor?.toUpperCase() === value.toUpperCase()
+      );
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", () => {
+        setHighlighterColor(value);
+        renderHighlighters();
+      });
+      grid.appendChild(button);
+    });
+    const actions = document.createElement("div");
+    actions.className = "palette-actions";
+    const erase = document.createElement("button");
+    erase.type = "button";
+    erase.textContent = "取消颜色（擦除高亮）";
+    erase.classList.toggle("selected-action", state.highlighterColor === "transparent");
+    erase.addEventListener("mousedown", (event) => event.preventDefault());
+    erase.addEventListener("click", () => {
+      setHighlighterColor("transparent");
+      renderHighlighters();
+    });
+    const done = document.createElement("button");
+    done.type = "button";
+    done.textContent = "完成";
+    done.className = "palette-done";
+    done.addEventListener("click", () => {
+      highlighterPanel.hidden = true;
+      highlighterMenu.setAttribute("aria-expanded", "false");
+    });
+    actions.append(erase, done);
+    highlighterPanel.append(heading, hint, grid, actions);
+  };
+  highlighterMenu.addEventListener("mousedown", (event) => event.preventDefault());
+  highlighterMenu.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const opening = highlighterPanel.hidden;
+    closeColorPanels(opening ? highlighterPanel : null);
+    highlighterPanel.hidden = !opening;
+    highlighterMenu.setAttribute("aria-expanded", String(opening));
+    renderHighlighters();
+    if (opening) positionColorPanel(highlighterMenu, highlighterPanel);
+  });
+  document.querySelector("#highlighter-toggle").addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
+  document.querySelector("#highlighter-toggle").addEventListener("click", toggleHighlighter);
+  document.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest(".color-palette-control,.highlighter-control")) closeColorPanels();
+  });
+  updateHighlighterUI();
+}
+
 function syncSourceEditor(action = "编辑 HTML 源码") {
   const documentValue = activeDocument();
   if (!documentValue || isGuide(documentValue) ||
@@ -858,9 +1296,9 @@ function syncSourceEditor(action = "编辑 HTML 源码") {
   }
   const previousCount = documentValue.html.length;
   documentValue.html = elements.source.value;
-  updateStats();
-  updateOutline();
-  setDirty(true, documentValue);
+  markDocumentDirty(documentValue);
+  scheduleDocumentAnalysis(documentValue);
+  scheduleWorkspacePersistence(documentValue);
   scheduleHistory(
     documentValue,
     action,
@@ -1672,6 +2110,7 @@ async function saveDocument(saveAs = false) {
     showToast("使用说明是内置页面，无需保存。");
     return false;
   }
+  flushDesignCapture(documentValue);
   try {
     const oldKey = documentValue.historyKey;
     const result = await window.htmlStudioAPI.saveHTML({
@@ -1715,6 +2154,7 @@ async function exportMarkdown() {
     showToast("请先选择需要导出的 HTML 文档。");
     return;
   }
+  flushDesignCapture();
   try {
     const markdown = window.HTMLStudioConverters.htmlToMarkdown(state.html);
     const result = await window.htmlStudioAPI.exportText({
@@ -1733,6 +2173,7 @@ async function exportDOCX() {
     showToast("请先选择需要导出的 HTML 文档。");
     return;
   }
+  flushDesignCapture();
   try {
     const result = await window.htmlStudioAPI.exportDOCX({
       model: buildDOCXModel(),
@@ -1749,6 +2190,7 @@ async function exportPDF() {
     showToast("请先选择需要导出的 HTML 文档。");
     return;
   }
+  flushDesignCapture();
   const originalLabel = elements.exportPDFButton.textContent;
   elements.exportPDFButton.disabled = true;
   elements.exportPDFButton.textContent = "正在导出…";
@@ -1772,6 +2214,7 @@ async function printDocument() {
     showToast("请先选择需要打印的 HTML 文档。");
     return;
   }
+  flushDesignCapture();
   const originalLabel = elements.printButton.textContent;
   elements.printButton.disabled = true;
   elements.printButton.textContent = "准备打印…";
@@ -2231,6 +2674,7 @@ elements.frame.addEventListener("load", () => {
     state.compositionAction = "中文输入";
     state.pendingAction = null;
     clearTimeout(state.visualCaptureTimer);
+    state.visualCaptureTimer = null;
   }, true);
   frameDocument.addEventListener("compositionupdate", () => {
     if (!isGuide()) state.isComposing = true;
@@ -2241,7 +2685,7 @@ elements.frame.addEventListener("load", () => {
     const action = state.compositionAction || "中文输入";
     state.compositionAction = null;
     state.pendingAction = action;
-    requestAnimationFrame(() => {
+    queueMicrotask(() => {
       saveSelection();
       scheduleDesignCapture(action);
     });
@@ -2257,7 +2701,7 @@ elements.frame.addEventListener("load", () => {
       (event.inputType?.startsWith("delete") ? "删除内容" : "编辑页面文字");
   }, true);
   frameDocument.addEventListener("input", (event) => {
-    if (isGuide() || state.isComposing || event.isComposing ||
+    if (state.isApplyingHighlighter || isGuide() || state.isComposing || event.isComposing ||
         event.inputType === "insertCompositionText") {
       return;
     }
@@ -2265,7 +2709,7 @@ elements.frame.addEventListener("load", () => {
       inputActionNames[event.inputType] ||
       "编辑页面文字";
     state.pendingAction = null;
-    requestAnimationFrame(() => {
+    queueMicrotask(() => {
       repairSelection();
       scheduleDesignCapture(action);
     });
@@ -2313,6 +2757,10 @@ elements.frame.addEventListener("load", () => {
     markActivePage(event.target);
     hideContextMenu();
   }, true);
+  frameDocument.addEventListener("pointerup", () => {
+    if (!state.highlighterActive) return;
+    queueMicrotask(() => applyHighlighterSelection());
+  }, true);
   frameDocument.addEventListener("contextmenu", (event) => {
     event.preventDefault();
     saveSelection();
@@ -2343,12 +2791,6 @@ document.querySelector("#font-size").addEventListener("change", (event) => {
 });
 document.querySelector("#block-format").addEventListener("change", (event) => {
   executeCommand("formatBlock", event.target.value);
-});
-document.querySelector("#foreground-color").addEventListener("change", (event) => {
-  executeCommand("foreColor", event.target.value);
-});
-document.querySelector("#highlight-color").addEventListener("change", (event) => {
-  executeCommand("hiliteColor", event.target.value);
 });
 window.HTMLStudioComponents.catalog.forEach((item) => {
   const option = document.createElement("option");
@@ -2436,33 +2878,22 @@ document.querySelectorAll("[data-table-insert]").forEach((button) => {
     elements.tableMenu.open = false;
   });
 });
+[elements.pageMenu, elements.tableMenu].forEach((details) => {
+  details.addEventListener("toggle", () => {
+    if (details.open) queueMicrotask(() => positionToolbarMenu(details));
+  });
+});
 document.querySelectorAll("[data-table-action]").forEach((button) => {
   button.addEventListener("click", () => {
     tableAction(button.dataset.tableAction);
     elements.tableMenu.open = false;
   });
 });
-elements.tableBackgroundColor.addEventListener("change", (event) => {
-  setTableBackgroundColor(event.target.value);
-  elements.tableMenu.open = false;
-});
-document.querySelector("#clear-table-background").addEventListener("click", () => {
-  setTableBackgroundColor("transparent");
-  elements.tableMenu.open = false;
-});
 document.querySelectorAll("[data-page-action]").forEach((button) => {
   button.addEventListener("click", () => {
     pageAction(button.dataset.pageAction);
     elements.pageMenu.open = false;
   });
-});
-elements.pageBackgroundColor.addEventListener("change", (event) => {
-  setPageBackgroundColor(event.target.value);
-  elements.pageMenu.open = false;
-});
-document.querySelector("#clear-page-background").addEventListener("click", () => {
-  setPageBackgroundColor("transparent");
-  elements.pageMenu.open = false;
 });
 document.querySelectorAll("[data-context-action]").forEach((button) => {
   button.addEventListener("mousedown", (event) => event.preventDefault());
@@ -2777,6 +3208,7 @@ window.htmlStudioAPI.onOpenFiles((files) => {
 async function initializeWorkspace() {
   const startup = await window.htmlStudioAPI.startupFiles();
   restoreWorkspace(startup.externalLaunch);
+  initializeColorTools();
   if (startup.externalLaunch) await openDocumentResults(startup.files);
   if (!workspaceState.documents.length) await newDocument();
   renderTabs();
@@ -2791,5 +3223,24 @@ async function initializeWorkspace() {
     externalOpenQueue = externalOpenQueue.then(() => openDocumentResults(files));
   }
 }
+
+window.__HTMLStudioDiagnostics = {
+  performanceMetrics() {
+    const documentValue = activeDocument();
+    return {
+      snapshotCount: documentValue?.snapshotCount || 0,
+      lastSnapshotDurationMs: documentValue?.lastSnapshotDurationMs || 0,
+      designDirty: Boolean(documentValue?.designDirty),
+      elementCount: designDocument()?.getElementsByTagName("*").length || 0
+    };
+  },
+  flushDesignCapture,
+  applyHighlighterSelection
+};
+
+window.addEventListener("beforeunload", () => {
+  flushDesignCapture();
+  persistWorkspace();
+});
 
 initializeWorkspace().catch((error) => showToast(`启动失败：${error.message}`));

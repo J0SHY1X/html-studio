@@ -313,7 +313,6 @@ struct CodeEditor: NSViewRepresentable {
         let isFirstResponder = textView.window?.firstResponder === textView
         let selection = isFirstResponder ? textView.selectedRanges : []
         textView.string = text
-        SyntaxHighlighter.apply(to: textView, preserveSelection: isFirstResponder)
         let textLength = (text as NSString).length
         let safeSelection = selection.compactMap { value -> NSValue? in
             let range = value.rangeValue
@@ -329,12 +328,14 @@ struct CodeEditor: NSViewRepresentable {
                 : safeSelection
         }
         context.coordinator.isApplyingExternalChange = false
+        context.coordinator.scheduleHighlight()
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeEditor
         weak var textView: NSTextView?
         var isApplyingExternalChange = false
+        private var highlightWorkItem: DispatchWorkItem?
 
         init(parent: CodeEditor) {
             self.parent = parent
@@ -344,11 +345,23 @@ struct CodeEditor: NSViewRepresentable {
             guard !isApplyingExternalChange, let textView else { return }
             parent.onFocus()
             parent.text = textView.string
-            SyntaxHighlighter.apply(to: textView)
+            scheduleHighlight()
         }
 
         func textDidBeginEditing(_ notification: Notification) {
             parent.onFocus()
+        }
+
+        func scheduleHighlight() {
+            highlightWorkItem?.cancel()
+            guard let textView else { return }
+            let delay: TimeInterval = textView.string.utf8.count > 250_000 ? 0.8 : 0.28
+            let workItem = DispatchWorkItem { [weak textView] in
+                guard let textView else { return }
+                SyntaxHighlighter.apply(to: textView)
+            }
+            highlightWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
         }
     }
 }

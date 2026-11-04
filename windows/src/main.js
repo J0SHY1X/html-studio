@@ -29,6 +29,7 @@ const {
 let mainWindow = null;
 let printOperationInProgress = false;
 const maximumHistoryEntries = 120;
+const maximumHistoryCharacters = 18_000_000;
 const ownsInstanceLock = app.requestSingleInstanceLock();
 let rendererReady = false;
 const pendingFilePaths = filePathsFromArguments(process.argv.slice(1));
@@ -131,8 +132,13 @@ async function readHistory(key) {
 
 async function writeHistory(key, entries) {
   await fs.mkdir(historyDirectory(), { recursive: true });
+  const latestSize = Math.max(1, String(entries?.at(-1)?.html || "").length);
+  const sizeAwareLimit = Math.max(
+    8,
+    Math.min(maximumHistoryEntries, Math.floor(maximumHistoryCharacters / latestSize))
+  );
   const values = Array.isArray(entries)
-    ? entries.slice(-maximumHistoryEntries)
+    ? entries.slice(-sizeAwareLimit)
     : [];
   await fs.writeFile(historyPath(key), JSON.stringify(values, null, 2), "utf8");
   return values;

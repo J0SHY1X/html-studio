@@ -222,7 +222,17 @@ struct DocumentRegressionTests {
         }
         #expect(scrollY > 1000)
         checkLayout(NSSize(width: 1000, height: 640))
-        let outlineScroll = try #require(descendants(host).compactMap { $0 as? NSScrollView }.first {
+        var scrollViews = descendants(host).compactMap { $0 as? NSScrollView }
+        for _ in 0..<40 {
+            if workspace.activeDocument.outlineItems.count == 31,
+               scrollViews.contains(where: { $0.bounds.width < 280 && $0.bounds.height > 100 }) {
+                break
+            }
+            try await Task.sleep(nanoseconds: 25_000_000)
+            host.layoutSubtreeIfNeeded()
+            scrollViews = descendants(host).compactMap { $0 as? NSScrollView }
+        }
+        let outlineScroll = try #require(scrollViews.first {
             $0.bounds.width < 280 && $0.bounds.height > 100
         })
         let outlineContent = try #require(outlineScroll.documentView)

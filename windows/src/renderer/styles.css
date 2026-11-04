@@ -612,6 +612,177 @@ input:disabled {
   background: #111923;
 }
 
+.color-palette-control,
+.highlighter-control {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.palette-toggle,
+.highlighter-main,
+.highlighter-arrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.palette-toggle {
+  min-width: 100px !important;
+}
+
+.tool-symbol {
+  font-weight: 800;
+}
+
+.color-preview {
+  width: 18px;
+  height: 14px;
+  flex: none;
+  border: 1px solid rgba(255, 255, 255, .5);
+  border-radius: 3px;
+  background: #111827;
+}
+
+.highlighter-control {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #111923;
+}
+
+.highlighter-control .highlighter-main,
+.highlighter-control .highlighter-arrow {
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+}
+
+.highlighter-control .highlighter-main {
+  min-width: 92px;
+}
+
+.highlighter-control .highlighter-main.active {
+  background: rgba(91, 140, 255, .25);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.highlighter-control .highlighter-arrow {
+  min-width: 24px;
+  padding: 0 6px;
+  border-left: 1px solid var(--border);
+  border-radius: 0 4px 4px 0;
+}
+
+.color-palette-panel {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  width: 270px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  margin-top: 34px;
+  padding: 12px;
+  border: 1px solid #53657c;
+  border-radius: 10px;
+  background: #111923;
+  color: var(--text);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, .58);
+  gap: 8px;
+}
+
+.color-palette-panel[hidden] {
+  display: none;
+}
+
+.color-palette-panel > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 34px);
+  gap: 8px;
+}
+
+.palette-swatch {
+  position: relative;
+  width: 32px;
+  min-width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  border: 2px solid transparent !important;
+  border-radius: 7px !important;
+  background: var(--swatch) !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .22);
+}
+
+.palette-swatch.selected {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, .32), inset 0 0 0 1px rgba(0, 0, 0, .25);
+}
+
+.palette-swatch.selected::after {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #111827;
+  content: "✓";
+  font-weight: 800;
+  text-shadow: 0 1px 1px white;
+}
+
+.palette-actions {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  gap: 6px;
+}
+
+.palette-actions button,
+.custom-color-button {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #17212d;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.custom-color-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.palette-actions .palette-done {
+  margin-left: auto;
+  background: var(--accent);
+  color: white;
+}
+
+.palette-actions .selected-action {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.menu-palette {
+  display: block;
+  width: 100%;
+}
+
+.menu-palette .palette-toggle {
+  width: 100%;
+  justify-content: space-between;
+  border: 0;
+}
+
 .table-menu,
 .toolbar-menu {
   position: relative;
@@ -638,6 +809,8 @@ input:disabled {
   z-index: 20;
   display: grid;
   width: 200px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   margin-top: 4px;
   padding: 6px;
   border: 1px solid #415066;

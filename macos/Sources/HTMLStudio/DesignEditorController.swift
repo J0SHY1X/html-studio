@@ -7,11 +7,19 @@ final class DesignEditorController: ObservableObject {
     @Published private(set) var isReady = false
     @Published private(set) var statusText = "正在准备可视化编辑器…"
     @Published private(set) var zoomPercent = 100
+    @Published private(set) var hasUnsynchronizedChanges = false
+    @Published private(set) var isHighlighterActive = false
+    @Published private(set) var highlighterColor: String? = "#FFF3A3"
+    private(set) var pendingDesignAction = "编辑可视化页面"
 
     @Published private(set) var comments: [PageComment] = []
     private var commentsVisible = false
 
     func refreshComments() {
+        guard commentsVisible else {
+            comments = []
+            return
+        }
         invoke("commentsList", arguments: []) { [weak self] value in
             self?.comments = (value as? [[String: String]] ?? []).enumerated().compactMap { offset, item in
                 guard let id = item["id"], let note = item["note"], let text = item["text"] else { return nil }
@@ -81,6 +89,29 @@ final class DesignEditorController: ObservableObject {
         if value {
             statusText = "可直接编辑页面内容"
             setCommentsVisible(commentsVisible)
+            invoke(
+                "setHighlighterMode",
+                arguments: [isHighlighterActive, highlighterColor ?? "transparent"]
+            )
+        }
+    }
+
+    func markUnsynchronized(action: String) {
+        pendingDesignAction = action
+        if !hasUnsynchronizedChanges {
+            hasUnsynchronizedChanges = true
+        }
+    }
+
+    func markSynchronized() {
+        hasUnsynchronizedChanges = false
+    }
+
+    func flushHTML(completion: @escaping (String?, String) -> Void) {
+        let action = pendingDesignAction
+        invoke("flushSnapshot", arguments: []) { [weak self] value in
+            self?.markSynchronized()
+            completion(value as? String, action)
         }
     }
 
@@ -144,6 +175,23 @@ final class DesignEditorController: ObservableObject {
 
     func setPageBackgroundColor(_ value: String?) {
         invoke("setPageBackgroundColor", arguments: [value ?? "transparent"])
+    }
+
+    func toggleHighlighter() {
+        isHighlighterActive.toggle()
+        invoke(
+            "setHighlighterMode",
+            arguments: [isHighlighterActive, highlighterColor ?? "transparent"]
+        )
+    }
+
+    func selectHighlighter(_ color: String?) {
+        highlighterColor = color
+        isHighlighterActive = true
+        invoke(
+            "setHighlighterMode",
+            arguments: [true, color ?? "transparent"]
+        )
     }
 
     func find(

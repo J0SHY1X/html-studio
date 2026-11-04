@@ -22,6 +22,7 @@ extension DocumentRegressionTests {
         let web = try #require(descendants(host).compactMap { $0 as? WKWebView }.first)
         for _ in 0..<120 { if doc.designController.isReady { break };try await Task.sleep(nanoseconds: 50_000_000) }
         #expect(doc.designController.isReady)
+        doc.designController.setCommentsVisible(true)
         _ = try await web.evaluateJavaScript("""
         var range = document.createRange(); range.selectNodeContents(document.querySelector('strong'));
         window.getSelection().removeAllRanges();window.getSelection().addRange(range);

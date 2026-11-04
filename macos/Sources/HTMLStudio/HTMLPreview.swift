@@ -5,6 +5,7 @@ import WebKit
 struct HTMLPreview: NSViewRepresentable {
     let html: String
     let onHTMLChange: (String, String) -> Void
+    let onDesignDirty: (String) -> Void
     let baseURL: URL?
     let isEditable: Bool
     let controller: DesignEditorController
@@ -13,6 +14,7 @@ struct HTMLPreview: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onHTMLChange: onHTMLChange,
+            onDesignDirty: onDesignDirty,
             onFocus: onFocus,
             controller: controller
         )
@@ -49,6 +51,7 @@ struct HTMLPreview: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         let editableStateChanged = context.coordinator.isEditable != isEditable
         context.coordinator.onHTMLChange = onHTMLChange
+        context.coordinator.onDesignDirty = onDesignDirty
         context.coordinator.onFocus = onFocus
         context.coordinator.isEditable = isEditable
         controller.attach(webView)
@@ -83,6 +86,7 @@ struct HTMLPreview: NSViewRepresentable {
         static let messageHandlerName = "htmlStudio"
 
         var onHTMLChange: (String, String) -> Void
+        var onDesignDirty: (String) -> Void
         var onFocus: () -> Void
         let controller: DesignEditorController
         weak var webView: WKWebView?
@@ -91,10 +95,12 @@ struct HTMLPreview: NSViewRepresentable {
 
         init(
             onHTMLChange: @escaping (String, String) -> Void,
+            onDesignDirty: @escaping (String) -> Void,
             onFocus: @escaping () -> Void,
             controller: DesignEditorController
         ) {
             self.onHTMLChange = onHTMLChange
+            self.onDesignDirty = onDesignDirty
             self.onFocus = onFocus
             self.controller = controller
         }
@@ -120,6 +126,7 @@ struct HTMLPreview: NSViewRepresentable {
                 let action = payload["action"] as? String ?? "编辑可视化页面"
                 let shouldRefocus = payload["shouldRefocus"] as? Bool ?? false
                 onHTMLChange(editedHTML, action)
+                controller.markSynchronized()
                 controller.refreshComments()
                 if shouldRefocus {
                     DispatchQueue.main.async { [weak self] in
@@ -129,6 +136,10 @@ struct HTMLPreview: NSViewRepresentable {
                         )
                     }
                 }
+            case "designDirty":
+                let action = payload["action"] as? String ?? "编辑可视化页面"
+                controller.markUnsynchronized(action: action)
+                onDesignDirty(action)
             case "focus":
                 onFocus()
             case "showContextMenu":
@@ -201,7 +212,7 @@ struct HTMLPreview: NSViewRepresentable {
                 to: menu
             )
             addColorMenu(
-                title: "背景颜色",
+                title: "文字底色（单次）",
                 command: "hiliteColor",
                 includesTransparent: true,
                 to: menu
@@ -424,7 +435,12 @@ struct HTMLPreview: NSViewRepresentable {
       }
 
       const handler = window.webkit?.messageHandlers?.htmlStudio;
-      const post = (payload) => handler?.postMessage(payload);
+      // Newer WebKit returns a Promise from postMessage. Never leak that
+      // Promise as the result of an injected/evaluated script because the
+      // native evaluateJavaScript bridge cannot marshal it.
+      const post = (payload) => {
+        handler?.postMessage(payload);
+      };
       const commandNames = {
         bold: '设置粗体',
         italic: '设置斜体',
@@ -468,9 +484,16 @@ struct HTMLPreview: NSViewRepresentable {
         editable: true,
         savedRange: null,
         changeTimer: null,
+        dirtyPosted: false,
+        syncDelayMs: 350,
+        snapshotCount: 0,
+        lastSnapshotDurationMs: 0,
         pendingAction: null,
         compositionAction: null,
         isComposing: false,
+        isApplyingTool: false,
+        highlighterActive: false,
+        highlighterColor: '#FFF3A3',
         activePage: null,
         findState: { key: '', matches: [], currentIndex: -1 },
         pageSelector: '[data-slide], [data-page], [data-page-number], .slide, .page, .html-studio-page',
@@ -562,6 +585,7 @@ struct HTMLPreview: NSViewRepresentable {
         },
 
         snapshot() {
+          const startedAt = performance.now();
           const clone = document.documentElement.cloneNode(true);
           window.HTMLStudioAnnotations.create(document).prepareClone(clone);
           clone.querySelectorAll('[data-html-studio-ui]').forEach((node) => node.remove());
@@ -573,12 +597,16 @@ struct HTMLPreview: NSViewRepresentable {
             body.removeAttribute('contenteditable');
             body.removeAttribute('spellcheck');
             body.removeAttribute('data-html-studio-editing');
+            body.removeAttribute('data-html-studio-highlighter');
           }
           let doctype = '<!doctype html>';
           if (document.doctype) {
             doctype = '<!DOCTYPE ' + document.doctype.name + '>';
           }
-          return doctype + '\n' + clone.outerHTML;
+          const result = doctype + '\n' + clone.outerHTML;
+          this.snapshotCount += 1;
+          this.lastSnapshotDurationMs = performance.now() - startedAt;
+          return result;
         },
 
         notifyChange(action = '编辑可视化页面', shouldRefocus = false) {
@@ -588,14 +616,36 @@ struct HTMLPreview: NSViewRepresentable {
           }
           clearTimeout(this.changeTimer);
           const nextAction = action || '编辑可视化页面';
+          if (!this.dirtyPosted) {
+            this.dirtyPosted = true;
+            post({ type: 'designDirty', action: nextAction });
+          }
           this.changeTimer = setTimeout(() => {
+            this.changeTimer = null;
+            this.dirtyPosted = false;
             post({
               type: 'htmlChanged',
               action: nextAction,
               shouldRefocus: !!shouldRefocus,
               html: this.snapshot()
             });
-          }, 120);
+          }, this.syncDelayMs);
+        },
+
+        flushSnapshot() {
+          clearTimeout(this.changeTimer);
+          this.changeTimer = null;
+          this.dirtyPosted = false;
+          return this.snapshot();
+        },
+
+        performanceMetrics() {
+          return {
+            snapshotCount: this.snapshotCount,
+            lastSnapshotDurationMs: this.lastSnapshotDurationMs,
+            syncDelayMs: this.syncDelayMs,
+            elementCount: document.getElementsByTagName('*').length
+          };
         },
 
         installEditingStyle() {
@@ -627,6 +677,9 @@ struct HTMLPreview: NSViewRepresentable {
             body[data-html-studio-editing="true"] {
               min-height: 100vh !important;
               cursor: text;
+            }
+            body[data-html-studio-editing="true"][data-html-studio-highlighter="true"] {
+              cursor: crosshair;
             }
             body[data-html-studio-editing="true"] *:hover {
               outline: 1px dashed rgba(59, 130, 246, .28);
@@ -662,6 +715,7 @@ struct HTMLPreview: NSViewRepresentable {
           body.contentEditable = this.editable ? 'true' : 'false';
           body.spellcheck = this.editable;
           body.dataset.htmlStudioEditing = this.editable ? 'true' : 'false';
+          body.dataset.htmlStudioHighlighter = this.highlighterActive ? 'true' : 'false';
           if (this.editable && editableStateChanged) {
             document.execCommand('styleWithCSS', false, true);
             this.repairSelection();
@@ -689,6 +743,47 @@ struct HTMLPreview: NSViewRepresentable {
             this.repairSelection();
             this.notifyChange(action, true);
           });
+        },
+
+        setHighlighterMode(active, value) {
+          this.highlighterActive = !!active;
+          this.highlighterColor = String(value || 'transparent');
+          this.body().dataset.htmlStudioHighlighter = this.highlighterActive ? 'true' : 'false';
+          const mode = this.highlighterColor === 'transparent' ? '擦除高亮' : '荧光笔';
+          post({
+            type: 'status',
+            value: this.highlighterActive ? `${mode}已开启：拖动选择文字即可应用` : `${mode}已关闭`
+          });
+          return true;
+        },
+
+        applyHighlighterSelection() {
+          if (!this.editable || !this.highlighterActive || this.isComposing) return false;
+          const selection = window.getSelection();
+          if (!selection?.rangeCount || selection.isCollapsed) return false;
+          const range = selection.getRangeAt(0);
+          if (!this.isRangeValid(range)) return false;
+          this.savedRange = range.cloneRange();
+          this.isApplyingTool = true;
+          let result = false;
+          try {
+            document.execCommand('styleWithCSS', false, true);
+            result = document.execCommand(
+              'hiliteColor',
+              false,
+              this.highlighterColor === 'transparent' ? 'transparent' : this.highlighterColor
+            );
+          } finally {
+            this.isApplyingTool = false;
+          }
+          if (!result) return false;
+          const collapseRange = selection.rangeCount ? selection.getRangeAt(0).cloneRange() : range.cloneRange();
+          collapseRange.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(collapseRange);
+          this.savedRange = collapseRange.cloneRange();
+          this.finishCommand(this.highlighterColor === 'transparent' ? '擦除文字高亮' : '使用荧光笔');
+          return true;
         },
 
         commentsList() { return window.HTMLStudioAnnotations.create(document).list(); },
@@ -1387,7 +1482,7 @@ struct HTMLPreview: NSViewRepresentable {
         editor.isComposing = false;
         editor.compositionAction = null;
         editor.pendingAction = null;
-        requestAnimationFrame(() => {
+        queueMicrotask(() => {
           editor.repairSelection();
           editor.notifyChange(action, false);
         });
@@ -1397,6 +1492,7 @@ struct HTMLPreview: NSViewRepresentable {
           (event.inputType?.startsWith('delete') ? '删除内容' : '编辑页面文字');
       }, true);
       document.addEventListener('input', (event) => {
+        if (editor.isApplyingTool) return;
         const action = editor.pendingAction || inputNames[event.inputType] || '编辑页面文字';
         if (event.isComposing ||
             editor.isComposing ||
@@ -1405,7 +1501,7 @@ struct HTMLPreview: NSViewRepresentable {
           return;
         }
         editor.pendingAction = null;
-        requestAnimationFrame(() => {
+        queueMicrotask(() => {
           editor.repairSelection();
           editor.notifyChange(action, false);
         });
@@ -1432,6 +1528,10 @@ struct HTMLPreview: NSViewRepresentable {
         post({ type: 'focus' });
         editor.markActivePage(event.target);
       }, true);
+      document.addEventListener('pointerup', () => {
+        if (!editor.highlighterActive) return;
+        queueMicrotask(() => editor.applyHighlighterSelection());
+      }, true);
       document.addEventListener('focusin', () => {
         post({ type: 'focus' });
       }, true);
@@ -1443,6 +1543,8 @@ struct HTMLPreview: NSViewRepresentable {
       }, true);
 
       window.__HTMLStudioEditor = editor;
+      const elementCount = document.getElementsByTagName('*').length;
+      editor.syncDelayMs = elementCount > 5000 ? 1200 : (elementCount > 1500 ? 700 : 350);
       editor.setEditable(true);
       post({ type: 'ready' });
     })();

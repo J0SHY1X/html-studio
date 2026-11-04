@@ -145,7 +145,7 @@ window.HTMLStudioGuideHTML = `<!doctype html>
 <body>
   <main>
     <section class="hero">
-      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.15</p>
+      <p class="eyebrow">HTML STUDIO · WINDOWS 0.3.16</p>
       <h1>从源码到所见即所得，<br>在一个窗口完成。</h1>
       <p class="lead">HTML Studio 可打开、实时预览和编辑 HTML，并导出 Markdown、Word 与 PDF，或打开 Windows 系统打印对话框。右侧页面支持中文输入法和类似 Word 的格式工具。</p>
       <span class="close-tip">本说明是独立标签页，点击标签上的 × 即可关闭</span>
@@ -178,7 +178,7 @@ window.HTMLStudioGuideHTML = `<!doctype html>
     <section class="features">
       <article class="card">
         <strong>Word 式工具栏</strong>
-        <p>支持字体、字号、粗体、斜体、下划线、颜色、段落、列表、缩进、链接、图片和表格行列编辑。</p>
+        <p>支持字体、字号、粗体、斜体、下划线、独立文字/页面/表格色板、六色荧光笔、段落、列表、缩进、链接、图片和表格行列编辑。荧光笔选色后拖动文字即可涂刷，再点主按钮结束。</p>
       </article>
       <article class="card">
         <strong>右键与分页</strong>
@@ -186,7 +186,7 @@ window.HTMLStudioGuideHTML = `<!doctype html>
       </article>
       <article class="card">
         <strong>修改历史</strong>
-        <p>每个文档独立记录最近 120 次修改快照，可查看、恢复旧版本，并导出 JSON 日志留存。</p>
+        <p>每个文档独立记录修改快照；大型文档会按体积自动控制保留数量，可查看、恢复旧版本，并导出 JSON 日志留存。</p>
       </article>
       <article class="card">
         <strong>查找与替换</strong>

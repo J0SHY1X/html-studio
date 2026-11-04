@@ -6,7 +6,15 @@
 
 A local-first HTML source and visual editor for macOS and Windows, with Markdown, DOCX and PDF export.
 
-[下载 v0.3.15](https://github.com/J0SHY1X/html-studio/releases/tag/v0.3.15) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+[下载发布版](https://github.com/J0SHY1X/html-studio/releases) · [MIT 许可证](LICENSE) · [贡献指南](CONTRIBUTING.md)
+
+## 0.3.16 更新
+
+- 大型 HTML 的可视化输入改为轻量脏标记与自适应合并同步；输入期间不再反复克隆、序列化整份 DOM，保存、切换文档、导出和打印前会强制同步最后修改。
+- 源码语法着色、页面重载、大纲统计、自动草稿和修改历史改为延迟合并或后台处理；修改历史按文档体积自动控制快照数量。
+- 文字颜色、页面底色和表格底色使用互相独立的简化色板；首次只显示标准色和用户保存的自定义色，点选后立即应用并保持面板打开。
+- 新增六色荧光笔（淡黄、浅绿、淡紫、品红、浅蓝、淡橙）和擦除模式；选色后拖动文字即可涂刷，再次点击主按钮结束。
+- Mac 与 Windows 免安装版同步更新为 0.3.16。
 
 ## 0.3.15 更新
 

@@ -62,10 +62,6 @@ private struct DocumentEditorView: View {
 
     private let conversionService = ConversionService.shared
 
-    private var outlineItems: [OutlineItem] {
-        OutlineParser.items(from: document.html)
-    }
-
     var body: some View {
         editorWithCommands
             .sheet(isPresented: $showHistory) {
@@ -137,16 +133,16 @@ private struct DocumentEditorView: View {
     private var editorWithExportCommands: some View {
         editorWithFileCommands
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioExportMarkdown)) { _ in
-                exportMarkdown()
+                synchronizeDesign(document, completion: exportMarkdown)
             }
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioExportDOCX)) { _ in
-                exportDOCX()
+                synchronizeDesign(document, completion: exportDOCX)
             }
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioExportPDF)) { _ in
-                exportPDF()
+                synchronizeDesign(document, completion: exportPDF)
             }
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioPrint)) { _ in
-                printDocument()
+                synchronizeDesign(document, completion: printDocument)
             }
     }
 
@@ -169,10 +165,10 @@ private struct DocumentEditorView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocument)) { _ in
-                _ = save(document)
+                saveAfterDesignSync(document)
             }
             .onReceive(NotificationCenter.default.publisher(for: .htmlStudioSaveDocumentAs)) { _ in
-                _ = saveAs(document)
+                saveAsAfterDesignSync(document)
             }
     }
 
@@ -212,6 +208,13 @@ private struct DocumentEditorView: View {
         .onChange(of: document.id) { _ in
             document.designController.setCommentsVisible(showComments)
         }
+        .onAppear {
+            // HTMLPreview already loads the document's current HTML when it is
+            // created. Cancel a delayed source-preview refresh that may have
+            // been queued before this view existed; otherwise it can reload
+            // the page just after the user begins editing and discard that edit.
+            document.cancelPendingPreviewReload()
+        }
         .onChange(of: document.previewRevision) { _ in
             document.designController.scheduleHTMLLoad(
                 document.html,
@@ -249,7 +252,7 @@ private struct DocumentEditorView: View {
             }
 
             Button {
-                _ = save(document)
+                saveAfterDesignSync(document)
             } label: {
                 Label("保存", systemImage: "square.and.arrow.down")
             }
@@ -494,7 +497,7 @@ private struct DocumentEditorView: View {
                         .buttonStyle(.borderless).help("向左折叠大纲").accessibilityLabel("向左折叠大纲")
                 }
 
-                if outlineItems.isEmpty {
+                if document.outlineItems.isEmpty {
                     Text("添加 h1–h6 标题后会显示大纲")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
@@ -502,7 +505,7 @@ private struct DocumentEditorView: View {
                 } else {
                     ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(alignment: .leading, spacing: 7) {
-                            ForEach(Array(outlineItems.enumerated()), id: \.offset) { index, item in
+                            ForEach(Array(document.outlineItems.enumerated()), id: \.offset) { index, item in
                                 Button {
                                     document.designController.scrollToHeading(at: index)
                                 } label: {
@@ -597,6 +600,9 @@ private struct DocumentEditorView: View {
                 html: document.html,
                 onHTMLChange: { html, action in
                     document.updateHTMLFromDesign(html, action: action)
+                },
+                onDesignDirty: { _ in
+                    document.markDesignDirty()
                 },
                 baseURL: document.baseURL,
                 isEditable: designEditing,
@@ -785,7 +791,7 @@ private struct DocumentEditorView: View {
             Text("\(workspace.documents.count) 个标签页")
             Text("\(document.changeLogEntries.count) 条记录")
             Text("\(document.lineCount) 行")
-            Text("\(document.html.count) 字符")
+            Text("\(document.characterCount) 字符")
             Text("UTF-8")
             Divider().frame(height: 14)
             PageZoomControls(controller: document.designController)
@@ -846,7 +852,9 @@ private struct DocumentEditorView: View {
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            if save(target) { workspace.close(target) }
+            saveAfterDesignSync(target) { success in
+                if success { workspace.close(target) }
+            }
         case .alertSecondButtonReturn:
             workspace.close(target)
         default:
@@ -864,6 +872,41 @@ private struct DocumentEditorView: View {
         } catch {
             present(error)
             return false
+        }
+    }
+
+    private func saveAfterDesignSync(
+        _ target: EditorDocument,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        synchronizeDesign(target) {
+            let success = save(target)
+            completion?(success)
+        }
+    }
+
+    private func saveAsAfterDesignSync(_ target: EditorDocument) {
+        synchronizeDesign(target) {
+            _ = saveAs(target)
+        }
+    }
+
+    private func synchronizeDesign(
+        _ target: EditorDocument,
+        completion: @escaping () -> Void
+    ) {
+        guard
+            target.designController.isReady,
+            target.designController.hasUnsynchronizedChanges
+        else {
+            completion()
+            return
+        }
+        target.designController.flushHTML { html, action in
+            if let html {
+                target.updateHTMLFromDesign(html, action: action)
+            }
+            completion()
         }
     }
 

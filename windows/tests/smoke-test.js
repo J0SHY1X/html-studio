@@ -32,7 +32,7 @@ for (const relativePath of requiredFiles) {
 const packageJSON = JSON.parse(
   fs.readFileSync(path.join(root, "package.json"), "utf8")
 );
-assert.equal(packageJSON.version, "0.3.15");
+assert.equal(packageJSON.version, "0.3.16");
 assert.equal(packageJSON.build.win.target[0].target, "nsis");
 assert.match(packageJSON.build.nsis.artifactName, /Setup/);
 assert.match(packageJSON.build.portable.artifactName, /Portable/);
@@ -60,8 +60,8 @@ assert.match(rendererHTML, /data-table-action="addRowAfter"/);
 assert.match(rendererHTML, /id="document-tab-list"/);
 assert.match(rendererHTML, /data-page-action="duplicateCurrent"/);
 assert.match(rendererHTML, /data-page-action="splitCurrent"/);
-assert.match(rendererHTML, /id="page-background-color"/);
-assert.match(rendererHTML, /id="table-background-color"/);
+assert.match(rendererHTML, /id="page-background-panel"/);
+assert.match(rendererHTML, /id="table-background-panel"/);
 assert.match(rendererHTML, /data-context-action="paste"/);
 assert.match(rendererHTML, /data-context-action="pastePlainText"/);
 assert.match(rendererHTML, /id="context-foreground-color"/);
@@ -82,7 +82,8 @@ assert.match(rendererHTML, /data-context-action="findReplace"/);
 assert.match(rendererHTML, /id="comment-dialog-title"/);
 assert.match(rendererHTML, /id="comment-submit"/);
 assert.match(rendererHTML, />文字颜色</);
-assert.match(rendererHTML, />文字高亮</);
+assert.match(rendererHTML, /id="highlighter-toggle"/);
+assert.match(rendererHTML, /id="highlighter-menu-toggle"/);
 
 const rendererJS = fs.readFileSync(
   path.join(root, "src/renderer/renderer.js"),
@@ -108,6 +109,15 @@ assert.match(rendererJS, /event\.isComposing/);
 assert.match(rendererJS, /documentValue\.isComposing/);
 assert.match(rendererJS, /function performHistoryCommand/);
 assert.match(rendererJS, /function syncSourceEditor/);
+assert.match(rendererJS, /function flushDesignCapture/);
+assert.match(rendererJS, /function createColorPalette/);
+assert.match(rendererJS, /function applyHighlighterSelection/);
+assert.match(rendererJS, /#FFF3A3/);
+assert.match(rendererJS, /#CFF7D3/);
+assert.match(rendererJS, /#E7D7FF/);
+assert.match(rendererJS, /#FFB3DE/);
+assert.match(rendererJS, /#BFE8FF/);
+assert.match(rendererJS, /#FFD3A8/);
 assert.match(rendererJS, /workspaceState\.activeEditor/);
 assert.match(rendererJS, /frameDocument\.addEventListener\("keydown"/);
 assert.match(rendererJS, /async function exportPDF/);

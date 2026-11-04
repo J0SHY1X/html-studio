@@ -15,6 +15,14 @@ cleanup() {
 trap cleanup EXIT
 if [[ -z ${SDKROOT:-} ]]; then
   export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
+  # Command Line Tools 27.2 exposes SwiftUI's macro-based interface but does
+  # not ship libSwiftUIMacros. Fall back to the newest bundled SDK whose
+  # SwiftUI property wrappers do not require that unavailable plugin.
+  SWIFTUI_MACRO_PLUGIN="$(xcode-select -p)/usr/lib/swift/host/plugins/libSwiftUIMacros.dylib"
+  COMPATIBLE_SDK="$(xcode-select -p)/SDKs/MacOSX26.5.sdk"
+  if [[ ! -f "$SWIFTUI_MACRO_PLUGIN" && -d "$COMPATIBLE_SDK" ]]; then
+    export SDKROOT="$COMPATIBLE_SDK"
+  fi
 fi
 export SWIFTPM_MODULECACHE_OVERRIDE="$BUILD_SCRATCH_DIR/module-cache"
 export CLANG_MODULE_CACHE_PATH="$BUILD_SCRATCH_DIR/clang-module-cache"
@@ -24,10 +32,6 @@ typeset -a BUILD_FLAGS
 BUILD_FLAGS=(--sdk "$SDKROOT" --scratch-path "$BUILD_SCRATCH_DIR")
 if [[ -n ${HTML_STUDIO_SWIFT_BUILD_SYSTEM:-} ]]; then
   BUILD_FLAGS+=(--build-system "$HTML_STUDIO_SWIFT_BUILD_SYSTEM")
-elif [[ "$(xcode-select -p)" == "/Library/Developer/CommandLineTools" ]]; then
-  # The Xcode build system bundled with Command Line Tools can fail while
-  # producing dSYM files. Native SwiftPM builds the same release executable.
-  BUILD_FLAGS+=(--build-system native)
 fi
 
 swift build --disable-sandbox "${BUILD_FLAGS[@]}" -c release --package-path "$PROJECT_ROOT" --product HTMLStudio

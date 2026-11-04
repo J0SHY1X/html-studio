@@ -17,6 +17,13 @@ final class ChangeLogStore {
     private let fileManager: FileManager
     private let historyDirectory: URL
     private let maximumEntries = 120
+    private let maximumApproximateCharacters = 18_000_000
+    private let persistenceQueue = DispatchQueue(
+        label: "HTMLStudio.ChangeLogPersistence",
+        qos: .utility
+    )
+    private let pendingLock = NSLock()
+    private var writeGenerations: [String: Int] = [:]
 
     init(fileManager: FileManager = .default, supportDirectory: URL? = nil) {
         self.fileManager = fileManager
@@ -46,18 +53,27 @@ final class ChangeLogStore {
         return entries.sorted { $0.timestamp < $1.timestamp }
     }
 
-    func append(_ entry: ChangeLogEntry, for key: String) -> [ChangeLogEntry] {
-        var values = entries(for: key)
+    func append(
+        _ entry: ChangeLogEntry,
+        for key: String,
+        existing: [ChangeLogEntry]? = nil
+    ) -> [ChangeLogEntry] {
+        var values = existing ?? entries(for: key)
         if let last = values.last,
            last.html == entry.html,
            last.action == entry.action {
             return values
         }
         values.append(entry)
-        if values.count > maximumEntries {
-            values.removeFirst(values.count - maximumEntries)
+        let documentSize = max(1, entry.html.utf8.count)
+        let sizeAwareLimit = max(
+            8,
+            min(maximumEntries, maximumApproximateCharacters / documentSize)
+        )
+        if values.count > sizeAwareLimit {
+            values.removeFirst(values.count - sizeAwareLimit)
         }
-        persist(values, for: key)
+        persistAsync(values, for: key)
         return values
     }
 
@@ -102,6 +118,21 @@ final class ChangeLogStore {
             try encoder.encode(entries).write(to: url(for: key), options: .atomic)
         } catch {
             // Logging must never interrupt the editing workflow.
+        }
+    }
+
+    private func persistAsync(_ entries: [ChangeLogEntry], for key: String) {
+        pendingLock.lock()
+        let generation = (writeGenerations[key] ?? 0) + 1
+        writeGenerations[key] = generation
+        pendingLock.unlock()
+        persistenceQueue.async { [weak self] in
+            guard let self else { return }
+            self.pendingLock.lock()
+            let isLatest = self.writeGenerations[key] == generation
+            self.pendingLock.unlock()
+            guard isLatest else { return }
+            self.persist(entries, for: key)
         }
     }
 }

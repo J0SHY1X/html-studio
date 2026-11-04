@@ -198,6 +198,98 @@ async function checkCommentsAndPanels(page) {
   await page.locator("#comments-close").click();
 }
 
+async function checkLargeDocumentPerformanceAndColors(page) {
+  const frame = page.frameLocator("#design-frame");
+  const paragraphs = Array.from({ length: 2_100 }, (_, index) => (
+    `<p id="perf-${index}">第 ${index} 段：${"大型文档输入性能测试。".repeat(8)}</p>`
+  )).join("");
+  const html = `<!doctype html><html><body><section id="page" class="html-studio-page">`
+    + `<table id="color-table"><tbody><tr><td id="color-cell"><span id="color-text">独立颜色</span></td></tr></tbody></table>`
+    + `<p id="marker">荧光笔测试文字</p>${paragraphs}</section></body></html>`;
+  await page.locator("#source-editor").fill(html);
+  await frame.locator("#perf-1000").waitFor();
+  const before = await page.evaluate(() => window.__HTMLStudioDiagnostics.performanceMetrics());
+  assert.ok(before.elementCount > 1_500);
+
+  const duration = await page.evaluate(() => {
+    const target = document.querySelector("#design-frame").contentDocument.querySelector("#perf-1000");
+    const started = performance.now();
+    for (let index = 0; index < 40; index += 1) {
+      target.firstChild.appendData("测");
+      target.dispatchEvent(new InputEvent("input", {
+        bubbles: true, inputType: "insertText", data: "测"
+      }));
+    }
+    return performance.now() - started;
+  });
+  const immediate = await page.evaluate(() => window.__HTMLStudioDiagnostics.performanceMetrics());
+  assert.ok(duration < 250, `连续输入不应被全量 HTML 同步阻塞，实测 ${duration.toFixed(1)}ms`);
+  assert.equal(immediate.snapshotCount, before.snapshotCount, "输入期间不应制作全量快照");
+  assert.equal(immediate.designDirty, true);
+  await page.waitForFunction(
+    (count) => window.__HTMLStudioDiagnostics.performanceMetrics().snapshotCount === count + 1,
+    before.snapshotCount,
+    { timeout: 5_000 }
+  );
+  assert.match(await page.locator("#source-editor").inputValue(), /测{40}/);
+
+  await page.evaluate(() => {
+    const frameDocument = document.querySelector("#design-frame").contentDocument;
+    const range = frameDocument.createRange();
+    range.selectNodeContents(frameDocument.querySelector("#color-text"));
+    const selection = frameDocument.defaultView.getSelection();
+    selection.removeAllRanges(); selection.addRange(range);
+  });
+  await page.locator("#text-color-toggle").click();
+  await page.locator("#text-color-panel .palette-swatch[title='红色']").click();
+  assert.equal(await page.locator("#text-color-panel").isVisible(), true, "选色后面板应保持打开");
+  await page.locator("#text-color-panel .palette-done").click();
+
+  await page.locator("#table-menu summary").click();
+  await page.locator("#table-background-toggle").click();
+  await page.locator("#table-background-panel .palette-swatch[title='浅绿']").click();
+  assert.equal(await page.locator("#table-background-panel").isVisible(), true);
+  await page.locator("#table-background-panel .palette-done").click();
+
+  await page.locator("#page-menu summary").click();
+  await page.locator("#page-background-toggle").click();
+  await page.locator("#page-background-panel .palette-swatch[title='浅蓝']").click();
+  await page.locator("#page-background-panel .palette-done").click();
+
+  const colors = await page.evaluate(() => {
+    const doc = document.querySelector("#design-frame").contentDocument;
+    return {
+      text: doc.defaultView.getComputedStyle(doc.querySelector("#color-text")).color,
+      table: doc.defaultView.getComputedStyle(doc.querySelector("#color-cell")).backgroundColor,
+      page: doc.defaultView.getComputedStyle(doc.querySelector("#page")).backgroundColor
+    };
+  });
+  assert.equal(colors.text, "rgb(220, 38, 38)");
+  assert.equal(colors.table, "rgb(220, 252, 231)");
+  assert.equal(colors.page, "rgb(219, 234, 254)");
+
+  await page.locator("#highlighter-menu-toggle").click();
+  await page.locator("#highlighter-panel .palette-swatch[title='淡紫']").click();
+  await page.evaluate(() => {
+    const doc = document.querySelector("#design-frame").contentDocument;
+    const node = doc.querySelector("#marker").firstChild;
+    const range = doc.createRange();
+    range.setStart(node, 0); range.setEnd(node, 3);
+    const selection = doc.defaultView.getSelection();
+    selection.removeAllRanges(); selection.addRange(range);
+    doc.querySelector("#marker").dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  });
+  await page.waitForFunction(() => {
+    const doc = document.querySelector("#design-frame").contentDocument;
+    return Array.from(doc.querySelectorAll("#marker *")).some((node) => (
+      doc.defaultView.getComputedStyle(node).backgroundColor === "rgb(231, 215, 255)"
+    ));
+  });
+  assert.equal(await page.locator("#highlighter-toggle").getAttribute("aria-pressed"), "true");
+  await page.locator("#highlighter-toggle").click();
+  assert.equal(await page.locator("#highlighter-toggle").getAttribute("aria-pressed"), "false");
+}
+
 async function main() {
   const server = http.createServer(async (request, response) => {
     const name = path.basename(new URL(request.url, "http://localhost").pathname) || "index.html";
@@ -292,6 +384,9 @@ async function main() {
       await page.locator("#new-button").click();
       await page.waitForFunction(() => document.querySelector("#design-frame").contentDocument?.body?.textContent.trim() === "");
       await assertLayout();
+      await checkLargeDocumentPerformanceAndColors(page);
+      await page.locator("#new-button").click();
+      await page.waitForFunction(() => document.querySelector("#design-frame").contentDocument?.body?.textContent.trim() === "");
       await checkZoomAndComponents(page, () => assertLayout());
       await checkCommentsAndPanels(page);
       assert.deepEqual(errors, []);

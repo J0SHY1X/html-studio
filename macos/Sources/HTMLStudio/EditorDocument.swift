@@ -38,11 +38,16 @@ final class EditorDocument: ObservableObject, Identifiable {
     @Published private(set) var lastSavedAt: Date?
     @Published private(set) var previewRevision = 0
     @Published private(set) var changeLogEntries: [ChangeLogEntry] = []
+    @Published private(set) var outlineItems: [OutlineItem] = []
+    @Published private(set) var lineCount = 1
+    @Published private(set) var characterCount = 0
 
     private let conversionService: ConversionService
     private let draftStore: DraftStore
     private let historyStore: ChangeLogStore
     private var draftWorkItem: DispatchWorkItem?
+    private var analysisWorkItem: DispatchWorkItem?
+    private var previewWorkItem: DispatchWorkItem?
     private var historyTask: Task<Void, Never>?
     private var savedHTML: String
     private var draftIdentifier: UUID
@@ -76,6 +81,7 @@ final class EditorDocument: ObservableObject, Identifiable {
         }
 
         historyKey = historyStore.key(for: fileURL, fallback: draftIdentifier)
+        updateDocumentAnalysisImmediately()
         changeLogEntries = historyStore.entries(for: historyKey)
         if changeLogEntries.isEmpty {
             recordHistoryImmediately(
@@ -89,6 +95,8 @@ final class EditorDocument: ObservableObject, Identifiable {
     deinit {
         historyTask?.cancel()
         draftWorkItem?.cancel()
+        analysisWorkItem?.cancel()
+        previewWorkItem?.cancel()
     }
 
     var displayName: String {
@@ -100,19 +108,13 @@ final class EditorDocument: ObservableObject, Identifiable {
         (fileURL ?? importedSourceURL)?.deletingLastPathComponent()
     }
 
-    var lineCount: Int {
-        max(1, html.reduce(into: 1) { count, character in
-            if character == "\n" { count += 1 }
-        })
-    }
-
     func updateHTML(_ newValue: String) {
         applyHTMLUpdate(
             newValue,
             action: "编辑 HTML 源码",
             source: "源码"
         )
-        previewRevision &+= 1
+        schedulePreviewReload()
     }
 
     func updateHTMLFromDesign(
@@ -126,6 +128,15 @@ final class EditorDocument: ObservableObject, Identifiable {
         )
     }
 
+    func markDesignDirty() {
+        if !isDirty { isDirty = true }
+    }
+
+    func cancelPendingPreviewReload() {
+        previewWorkItem?.cancel()
+        previewWorkItem = nil
+    }
+
     private func applyHTMLUpdate(
         _ newValue: String,
         action: String,
@@ -135,6 +146,7 @@ final class EditorDocument: ObservableObject, Identifiable {
         let previousCount = html.count
         html = newValue
         isDirty = newValue != savedHTML
+        scheduleDocumentAnalysis()
         scheduleDraftSave()
         scheduleHistory(
             action: action,
@@ -172,6 +184,7 @@ final class EditorDocument: ObservableObject, Identifiable {
         isDirty = !isHTMLFile
         lastSavedAt = nil
         previewRevision &+= 1
+        updateDocumentAnalysisImmediately()
 
         historyTask?.cancel()
         historyKey = historyStore.key(for: url, fallback: draftIdentifier)
@@ -228,6 +241,7 @@ final class EditorDocument: ObservableObject, Identifiable {
         html = entry.html
         isDirty = html != savedHTML
         previewRevision &+= 1
+        updateDocumentAnalysisImmediately()
         scheduleDraftSave()
         recordHistoryImmediately(
             action: "恢复历史版本",
@@ -267,14 +281,66 @@ final class EditorDocument: ObservableObject, Identifiable {
         )
     }
 
+    private func schedulePreviewReload() {
+        previewWorkItem?.cancel()
+        let delay: TimeInterval
+        switch html.utf8.count {
+        case 500_000...: delay = 0.9
+        case 150_000...: delay = 0.45
+        default: delay = 0.18
+        }
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.previewRevision &+= 1
+        }
+        previewWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func scheduleDocumentAnalysis() {
+        analysisWorkItem?.cancel()
+        let snapshot = html
+        let workItem = DispatchWorkItem { [weak self] in
+            let outline = OutlineParser.items(from: snapshot)
+            let lines = Self.countLines(in: snapshot)
+            let characters = snapshot.count
+            DispatchQueue.main.async {
+                guard let self, self.html == snapshot else { return }
+                self.outlineItems = outline
+                self.lineCount = lines
+                self.characterCount = characters
+            }
+        }
+        analysisWorkItem = workItem
+        DispatchQueue.global(qos: .utility).asyncAfter(
+            deadline: .now() + 0.35,
+            execute: workItem
+        )
+    }
+
+    private func updateDocumentAnalysisImmediately() {
+        analysisWorkItem?.cancel()
+        outlineItems = OutlineParser.items(from: html)
+        lineCount = Self.countLines(in: html)
+        characterCount = html.count
+    }
+
+    private static func countLines(in value: String) -> Int {
+        max(1, value.utf8.reduce(into: 1) { count, byte in
+            if byte == 10 { count += 1 }
+        })
+    }
+
     private func scheduleHistory(
         action: String,
         source: String,
         summary: String
     ) {
         historyTask?.cancel()
+        let delay: UInt64 = html.utf8.count > 500_000
+            ? 1_800_000_000
+            : 650_000_000
         historyTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 650_000_000)
+            try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled, let self else { return }
             self.recordHistoryImmediately(
                 action: action,
@@ -298,7 +364,11 @@ final class EditorDocument: ObservableObject, Identifiable {
             filePath: fileURL?.path,
             html: html
         )
-        changeLogEntries = historyStore.append(entry, for: historyKey)
+        changeLogEntries = historyStore.append(
+            entry,
+            for: historyKey,
+            existing: changeLogEntries
+        )
     }
 
     func persistDraftNow() {

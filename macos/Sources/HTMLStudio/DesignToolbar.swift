@@ -9,10 +9,6 @@ struct DesignToolbar: View {
     @State private var selectedFont = "PingFang SC"
     @State private var selectedSize = 16
     @State private var selectedBlock = "p"
-    @State private var foregroundColor = Color.primary
-    @State private var highlightColor = Color.yellow.opacity(0.45)
-    @State private var pageBackgroundColor = Color.white
-    @State private var tableBackgroundColor = Color.white
 
     private let fonts = [
         "PingFang SC",
@@ -87,27 +83,17 @@ struct DesignToolbar: View {
                     commandButton("underline", icon: "underline", help: "下划线")
                     commandButton("strikeThrough", icon: "strikethrough", help: "删除线")
 
-                    ColorPicker(
-                        "文字颜色",
-                        selection: $foregroundColor,
-                        supportsOpacity: false
-                    )
-                    .fixedSize()
-                    .help("修改选中文字的颜色")
-                    .onChange(of: foregroundColor) { color in
-                        controller.execute("foreColor", value: color.hexString)
+                    SimpleColorPaletteButton(
+                        title: "文字颜色",
+                        systemImage: "textformat",
+                        paletteID: "text",
+                        colors: EditorColorPalette.text,
+                        initialColor: "#111827"
+                    ) { color in
+                        if let color { controller.execute("foreColor", value: color) }
                     }
 
-                    ColorPicker(
-                        "文字高亮",
-                        selection: $highlightColor,
-                        supportsOpacity: true
-                    )
-                    .fixedSize()
-                    .help("为选中文字增加荧光笔式底色")
-                    .onChange(of: highlightColor) { color in
-                        controller.execute("hiliteColor", value: color.hexString)
-                    }
+                    HighlighterTool(controller: controller)
 
                     groupDivider
 
@@ -216,15 +202,15 @@ struct DesignToolbar: View {
                     .fixedSize()
                     .help("复制、新增、拆分页面或清除页面底色")
 
-                    ColorPicker(
-                        "页面底色",
-                        selection: $pageBackgroundColor,
-                        supportsOpacity: true
-                    )
-                    .fixedSize()
-                    .help("修改当前页面的整体底色（不是文字高亮）")
-                    .onChange(of: pageBackgroundColor) { color in
-                        controller.setPageBackgroundColor(color.hexString)
+                    SimpleColorPaletteButton(
+                        title: "页面底色",
+                        systemImage: "doc.fill",
+                        paletteID: "page-background",
+                        colors: EditorColorPalette.surface,
+                        initialColor: "#FFFFFF",
+                        clearTitle: "恢复原页面底色"
+                    ) { color in
+                        controller.setPageBackgroundColor(color)
                     }
 
                     Menu {
@@ -279,15 +265,15 @@ struct DesignToolbar: View {
                     .menuStyle(.borderlessButton)
                     .fixedSize()
 
-                    ColorPicker(
-                        "表格底色",
-                        selection: $tableBackgroundColor,
-                        supportsOpacity: true
-                    )
-                    .fixedSize()
-                    .help("修改光标所在整张表格的底色（不是文字高亮）")
-                    .onChange(of: tableBackgroundColor) { color in
-                        controller.setTableBackgroundColor(color.hexString)
+                    SimpleColorPaletteButton(
+                        title: "表格底色",
+                        systemImage: "tablecells.fill",
+                        paletteID: "table-background",
+                        colors: EditorColorPalette.surface,
+                        initialColor: "#FFFFFF",
+                        clearTitle: "恢复原表格底色"
+                    ) { color in
+                        controller.setTableBackgroundColor(color)
                     }
 
                     Button {
@@ -360,20 +346,54 @@ struct DesignToolbar: View {
 
 }
 
-private extension Color {
-    var hexString: String {
-        guard
-            let color = NSColor(self).usingColorSpace(.sRGB)
-        else {
-            return "#000000"
+private struct HighlighterTool: View {
+    @ObservedObject var controller: DesignEditorController
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button {
+                controller.toggleHighlighter()
+            } label: {
+                Label(
+                    controller.highlighterColor == nil ? "取消高亮" : "荧光笔",
+                    systemImage: controller.highlighterColor == nil
+                        ? "eraser.fill" : "highlighter"
+                )
+                .padding(.horizontal, 4)
+                .frame(height: 22)
+                .background(
+                    controller.isHighlighterActive
+                        ? Color.accentColor.opacity(0.18) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 4)
+                )
+            }
+            .help(controller.isHighlighterActive ? "结束荧光笔涂刷" : "开始荧光笔涂刷")
+
+            Menu {
+                ForEach(EditorColorPalette.highlighters) { color in
+                    Button {
+                        controller.selectHighlighter(color.hex)
+                    } label: {
+                        Label(color.name, systemImage: "circle.fill")
+                    }
+                }
+                Divider()
+                Button {
+                    controller.selectHighlighter(nil)
+                } label: {
+                    Label("取消颜色（擦除高亮）", systemImage: "eraser")
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .frame(width: 16, height: 22)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("选择六色荧光笔或擦除模式；选择后自动开始涂刷")
         }
-        let red = Int(round(color.redComponent * 255))
-        let green = Int(round(color.greenComponent * 255))
-        let blue = Int(round(color.blueComponent * 255))
-        if color.alphaComponent < 0.999 {
-            let alpha = Int(round(color.alphaComponent * 255))
-            return String(format: "#%02X%02X%02X%02X", red, green, blue, alpha)
-        }
-        return String(format: "#%02X%02X%02X", red, green, blue)
+        .overlay(
+            RoundedRectangle(cornerRadius: 5)
+                .stroke(Color.secondary.opacity(0.35))
+        )
     }
 }
